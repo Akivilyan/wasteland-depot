@@ -24,6 +24,6 @@ npm run wechat:preview
 
 本机路径可通过 `COCOS_CREATOR_BIN` 与 `WECHAT_DEVTOOLS_CLI` 覆盖。Cocos 的命令行构建仍需要 macOS 图形会话。
 
-游戏共同模型见 [docs/GAME_SKELETON.md](docs/GAME_SKELETON.md)，架构与产品边界见 [docs/DECISIONS.md](docs/DECISIONS.md)，正式货舱交互提案见 [docs/INVENTORY_DESIGN.md](docs/INVENTORY_DESIGN.md)。
+游戏共同模型见 [docs/GAME_SKELETON.md](docs/GAME_SKELETON.md)，架构与产品边界见 [docs/DECISIONS.md](docs/DECISIONS.md)，正式货舱交互提案见 [docs/INVENTORY_DESIGN.md](docs/INVENTORY_DESIGN.md)，待拍板的产品决策见 [docs/PENDING_DECISIONS.md](docs/PENDING_DECISIONS.md)。
 
 当前可测试切片及人工验收步骤见 [docs/SLICE_001_TECH_PROBE.md](docs/SLICE_001_TECH_PROBE.md)。
