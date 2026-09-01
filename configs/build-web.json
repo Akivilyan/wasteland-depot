@@ -1,0 +1,14 @@
+{
+  "platform": "web-mobile",
+  "debug": true,
+  "buildPath": "project://build",
+  "outputName": "web-mobile",
+  "name": "wasteland-depot",
+  "packages": {
+    "web-mobile": {
+      "orientation": "portrait",
+      "useWebGPU": false,
+      "embedWebDebugger": false
+    }
+  }
+}

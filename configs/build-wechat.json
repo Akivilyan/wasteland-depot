@@ -1,0 +1,7 @@
+{
+  "platform": "wechatgame",
+  "debug": true,
+  "buildPath": "project://build",
+  "outputName": "wechatgame",
+  "name": "wasteland-depot"
+}

@@ -1,0 +1,27 @@
+{
+  "name": "wasteland-depot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "《末班车：废土仓库》微信小游戏原型",
+  "scripts": {
+    "doctor": "bash tools/doctor.sh",
+    "test": "node --test tests/*.test.mjs",
+    "verify": "npm run doctor && npm test && node tools/verify-project.mjs",
+    "build:web": "bash tools/cocos-build.sh web",
+    "build:wechat": "bash tools/cocos-build.sh wechat",
+    "wechat:islogin": "bash tools/wechat-cli.sh islogin",
+    "wechat:open": "bash tools/wechat-cli.sh open",
+    "wechat:preview": "bash tools/wechat-cli.sh preview"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "cocos": {
+    "creator": "3.8.8"
+  },
+  "creator": {
+    "version": "3.8.8"
+  },
+  "uuid": "e5bba2b3-40a1-4006-9e28-d3672b930200"
+}
