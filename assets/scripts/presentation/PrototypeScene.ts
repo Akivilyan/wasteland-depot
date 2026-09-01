@@ -2,190 +2,382 @@ import {
   _decorator,
   Color,
   Component,
-  EventTouch,
   Graphics,
   Label,
   Node,
   ResolutionPolicy,
   UITransform,
-  Vec2,
   Vec3,
   view,
+  Tween,
+  EventTouch,
 } from 'cc';
 import {
-  createInitialState,
-  decodePrototypeState,
-  encodePrototypeState,
-  ItemId,
-  ITEM_IDS,
+  createTrunkState,
+  TrunkState,
+  PlacedItem,
+  TRUNK_COLS,
+  TRUNK_ROWS,
+  TRUNK_CAPACITY,
+  cellIndex,
+  sizeToCell,
+  itemDef,
   placeItem,
-  PrototypeState,
-  TRUNK_SLOT_COUNT,
-} from '../core/prototype-state';
-import { createStoragePort, StoragePort } from '../platform/storage';
+  removeItem,
+  moveItem,
+  firstFreeSpot,
+  canPlace,
+  usedCells,
+  encodeTrunkState,
+  decodeTrunkState,
+  DEFAULT_ITEM_DEFS,
+  TrunkItemDef,
+} from '../core/trunk.ts';
+import { createStoragePort, StoragePort } from '../platform/storage.ts';
 
 const { ccclass } = _decorator;
 const DESIGN_WIDTH = 750;
 const DESIGN_HEIGHT = 1334;
-const SAVE_KEY = 'wasteland-depot.prototype.v1';
-const SLOT_X = [-210, 0, 210] as const;
-const SLOT_Y = 90;
+const SAVE_KEY = 'wasteland-depot.trunk.v1';
 
-const ITEM_STYLE: Record<ItemId, { label: string; color: Color }> = {
-  fuel: { label: '燃油', color: new Color(207, 149, 50, 255) },
-  food: { label: '食物', color: new Color(111, 158, 92, 255) },
-  medicine: { label: '药品', color: new Color(151, 91, 94, 255) },
+// 货舱网格几何
+const CELL_SIZE = 150;
+const CELL_GAP = 6;
+const GRID_LEFT = -330;
+const GRID_TOP = 300;
+const TRUNK_W = TRUNK_COLS * CELL_SIZE + (TRUNK_COLS - 1) * CELL_GAP;
+const TRUNK_H = TRUNK_ROWS * CELL_SIZE + (TRUNK_ROWS - 1) * CELL_GAP;
+
+const ITEM_COLORS: Record<string, Color> = {
+  food: new Color(111, 158, 92, 255),
+  medicine: new Color(151, 91, 94, 255),
+  fuel: new Color(207, 149, 50, 255),
+  material: new Color(120, 130, 150, 255),
+  survivor: new Color(140, 110, 160, 255),
 };
+
+const HIGHLIGHT = new Color(90, 210, 130, 120);
+const ERROR_FLASH = new Color(220, 80, 80, 180);
 
 @ccclass('PrototypeScene')
 export class PrototypeScene extends Component {
   private readonly storage: StoragePort = createStoragePort();
-  private readonly cards = new Map<ItemId, Node>();
-  private readonly homePositions = new Map<ItemId, Vec3>();
-  private state: PrototypeState = createInitialState();
-  private trunk: Node | null = null;
+  private trunk: TrunkState = createTrunkState();
+  private selectedItem: string | null = null;
+  private cargoArea: Node | null = null;
   private statusLabel: Label | null = null;
+  private capacityLabel: Label | null = null;
+  private cellNodes: Node[] = [];
 
   start(): void {
     view.setDesignResolutionSize(DESIGN_WIDTH, DESIGN_HEIGHT, ResolutionPolicy.FIXED_WIDTH);
     this.node.getComponent(UITransform)?.setContentSize(DESIGN_WIDTH, DESIGN_HEIGHT);
-    this.state = decodePrototypeState(this.storage.get(SAVE_KEY));
+    this.trunk = decodeTrunkState(this.storage.get(SAVE_KEY));
     this.buildInterface();
-    this.layoutCards();
+    this.refreshAll();
     this.setStatus(`已载入 · ${this.storage.name}`);
   }
 
   private buildInterface(): void {
-    this.createPanel('Background', 0, 0, DESIGN_WIDTH, DESIGN_HEIGHT, new Color(27, 31, 29, 255));
-    this.createLabel('Title', '末班车：废土仓库', 0, 560, 48, new Color(225, 213, 183, 255));
-    this.createLabel('Subtitle', '技术探路版 · 把物资拖进后备箱', 0, 505, 24, new Color(159, 166, 151, 255));
+    const bg = new Node('Background');
+    bg.setParent(this.node);
+    bg.addComponent(UITransform).setContentSize(DESIGN_WIDTH, DESIGN_HEIGHT);
+    const bgGraphics = bg.addComponent(Graphics);
+    bgGraphics.fillColor = new Color(27, 31, 29, 255);
+    bgGraphics.rect(-DESIGN_WIDTH / 2, -DESIGN_HEIGHT / 2, DESIGN_WIDTH, DESIGN_HEIGHT);
+    bgGraphics.fill();
 
-    this.trunk = this.createPanel('Trunk', 0, SLOT_Y, 650, 360, new Color(55, 62, 57, 255));
-    const trunkGraphics = this.trunk.getComponent(Graphics);
-    if (trunkGraphics !== null) {
-      trunkGraphics.strokeColor = new Color(150, 139, 111, 255);
-      trunkGraphics.lineWidth = 3;
-      trunkGraphics.rect(-325, -180, 650, 360);
-      trunkGraphics.moveTo(-108, -180);
-      trunkGraphics.lineTo(-108, 180);
-      trunkGraphics.moveTo(108, -180);
-      trunkGraphics.lineTo(108, 180);
-      trunkGraphics.stroke();
-    }
-    this.createLabel('TrunkTitle', '车辆后备箱 · 3 格载重', 0, 315, 28, new Color(225, 213, 183, 255));
+    this.createLabel('Title', '末班车：废土仓库', 0, 590, 44, new Color(225, 213, 183, 255));
+    this.createLabel('Subtitle', '货舱 · 点选物资再点格子放置', 0, 540, 22, new Color(159, 166, 151, 255));
 
-    ITEM_IDS.forEach((item, index) => {
-      const home = new Vec3(-240 + index * 240, -355, 0);
-      this.homePositions.set(item, home);
-      this.cards.set(item, this.createCard(item, home));
-    });
+    // 货舱面板
+    const trunkPanel = new Node('Trunk');
+    trunkPanel.setParent(this.node);
+    trunkPanel.setPosition(0, 150, 0);
+    this.createPanelBackground(trunkPanel, TRUNK_W + 40, TRUNK_H + 90, new Color(55, 62, 57, 255));
 
-    const reset = this.createPanel('Reset', 0, -555, 280, 72, new Color(92, 76, 60, 255));
-    const resetLabel = this.createLabel('ResetText', '清空后备箱', 0, -555, 26, new Color(240, 228, 201, 255));
-    resetLabel.node.setParent(reset);
-    resetLabel.node.setPosition(0, 0, 0);
-    reset.on(Node.EventType.TOUCH_END, () => {
-      this.storage.remove(SAVE_KEY);
-      this.state = createInitialState();
-      this.layoutCards();
-      this.setStatus('存档已清空');
-    });
+    this.capacityLabel = this.createLabel(
+      'Capacity',
+      '',
+      0,
+      TRUNK_H / 2 + 55,
+      22,
+      new Color(225, 213, 183, 255),
+      trunkPanel,
+    );
 
-    this.statusLabel = this.createLabel('Status', '', 0, -635, 20, new Color(137, 151, 134, 255));
-  }
-
-  private createCard(item: ItemId, home: Vec3): Node {
-    const style = ITEM_STYLE[item];
-    const card = this.createPanel(`Item-${item}`, home.x, home.y, 190, 150, style.color);
-    this.createLabel(`ItemLabel-${item}`, style.label, home.x, home.y + 8, 30, new Color(250, 244, 226, 255));
-    const itemLabel = this.node.getChildByName(`ItemLabel-${item}`);
-    itemLabel?.setParent(card);
-    itemLabel?.setPosition(0, 8, 0);
-
-    card.on(Node.EventType.TOUCH_START, () => {
-      if (card.parent !== null) {
-        card.setSiblingIndex(card.parent.children.length - 1);
+    // 网格
+    for (let y = 0; y < TRUNK_ROWS; y++) {
+      for (let x = 0; x < TRUNK_COLS; x++) {
+        const cell = new Node(`Cell-${x}-${y}`);
+        cell.setParent(trunkPanel);
+        cell.setPosition(GRID_LEFT + x * (CELL_SIZE + CELL_GAP) + CELL_SIZE / 2, GRID_TOP - y * (CELL_SIZE + CELL_GAP) - CELL_SIZE / 2, 0);
+        cell.addComponent(UITransform).setContentSize(CELL_SIZE, CELL_SIZE);
+        const g = cell.addComponent(Graphics);
+        g.fillColor = new Color(38, 43, 40, 255);
+        g.roundRect(-CELL_SIZE / 2, -CELL_SIZE / 2, CELL_SIZE, CELL_SIZE, 10);
+        g.fill();
+        cell.on(Node.EventType.TOUCH_END, () => this.onCellClick(cell));
+        this.cellNodes.push(cell);
       }
+    }
+
+    // 候选物资区（可横向滚动由表现层简化：放 4~5 张卡）
+    this.cargoArea = new Node('CargoArea');
+    this.cargoArea.setParent(this.node);
+    this.cargoArea.setPosition(0, -400, 0);
+    const cargoBg = new Node('CargoBg');
+    cargoBg.setParent(this.cargoArea);
+    cargoBg.addComponent(UITransform).setContentSize(720, 160);
+    const cg = cargoBg.addComponent(Graphics);
+    cg.fillColor = new Color(47, 52, 49, 255);
+    cg.roundRect(-360, -80, 720, 160, 14);
+    cg.fill();
+
+    // 候选物资：食物、药品、燃油、材料、幸存者
+    const candidates = ['food', 'medicine', 'fuel', 'material', 'survivor'];
+    candidates.forEach((id, i) => {
+      const def = itemDef(DEFAULT_ITEM_DEFS, id);
+      const x = -260 + i * 130;
+      this.createCandidateCard(def, x, 0);
     });
-    card.on(Node.EventType.TOUCH_MOVE, (event: EventTouch) => this.moveCard(card, event));
-    card.on(Node.EventType.TOUCH_END, (event: EventTouch) => this.dropCard(item, event));
-    card.on(Node.EventType.TOUCH_CANCEL, () => this.layoutCards());
-    return card;
+
+    // 操作按钮
+    this.createButton('Clear', '清空货舱', 0, -585, () => {
+      this.trunk = createTrunkState();
+      this.persist('货舱已清空');
+    });
+
+    this.statusLabel = this.createLabel('Status', '', 0, -660, 20, new Color(137, 151, 134, 255));
   }
 
-  private moveCard(card: Node, event: EventTouch): void {
-    const canvasTransform = this.node.getComponent(UITransform);
-    if (canvasTransform === null) {
-      return;
-    }
-    const location = event.getUILocation();
-    const local = canvasTransform.convertToNodeSpaceAR(new Vec3(location.x, location.y, 0));
-    card.setPosition(local);
+  private createCandidateCard(def: TrunkItemDef, x: number, y: number): void {
+    if (this.cargoArea === null) return;
+    const card = new Node(`Cargo-${def.id}`);
+    card.setParent(this.cargoArea);
+    card.setPosition(x, y, 0);
+    card.addComponent(UITransform).setContentSize(100, 100);
+    const g = card.addComponent(Graphics);
+    g.fillColor = ITEM_COLORS[def.id] ?? new Color(150, 150, 150, 255);
+    g.roundRect(-50, -50, 100, 100, 10);
+    g.fill();
+    const label = card.addComponent(Label);
+    label.string = def.label;
+    label.fontSize = 20;
+    label.lineHeight = 24;
+    label.color = new Color(250, 244, 226, 255);
+    label.horizontalAlign = Label.HorizontalAlign.CENTER;
+    label.verticalAlign = Label.VerticalAlign.CENTER;
+    // 点选候选物资
+    card.on(Node.EventType.TOUCH_END, () => {
+      this.selectCandidate(def.id);
+    });
   }
 
-  private dropCard(item: ItemId, event: EventTouch): void {
-    const trunkTransform = this.trunk?.getComponent(UITransform);
-    if (trunkTransform === null || trunkTransform === undefined) {
-      this.layoutCards();
-      return;
+  private selectCandidate(itemId: string): void {
+    if (this.selectedItem === itemId) {
+      this.selectedItem = null;
+      this.setStatus('已取消选择');
+    } else {
+      this.selectedItem = itemId;
+      this.setStatus(`已选择：${itemDef(DEFAULT_ITEM_DEFS, itemId).label}，点击货舱空位放置`);
     }
-
-    const location = event.getUILocation();
-    if (!trunkTransform.getBoundingBoxToWorld().contains(new Vec2(location.x, location.y))) {
-      this.state = this.removeFromTrunk(item);
-      this.persist('物资已移出后备箱');
-      return;
-    }
-
-    const canvasTransform = this.node.getComponent(UITransform);
-    if (canvasTransform === null) {
-      return;
-    }
-    const local = canvasTransform.convertToNodeSpaceAR(new Vec3(location.x, location.y, 0));
-    const slot = Math.max(0, Math.min(TRUNK_SLOT_COUNT - 1, Math.floor((local.x + 325) / (650 / TRUNK_SLOT_COUNT))));
-    this.state = placeItem(this.state, item, slot);
-    this.persist(`${ITEM_STYLE[item].label}已放入第 ${slot + 1} 格`);
+    this.refreshHighlight();
   }
 
-  private removeFromTrunk(item: ItemId): PrototypeState {
-    return {
-      version: 1,
-      trunkSlots: this.state.trunkSlots.map((current) => current === item ? null : current),
-    };
+  private onCellClick(cell: Node): void {
+    const name = cell.name;
+    const match = /Cell-(\d+)-(\d+)/.exec(name);
+    if (match === null || this.selectedItem === null) {
+      return;
+    }
+    const x = Number(match[1]);
+    const y = Number(match[2]);
+    const def = itemDef(DEFAULT_ITEM_DEFS, this.selectedItem);
+    const result = placeItem(this.trunk, DEFAULT_ITEM_DEFS, this.selectedItem, x, y);
+    if (result.ok) {
+      this.trunk = result.state;
+      this.selectedItem = null;
+      this.persist(`${def.label}已装入货舱`);
+    } else {
+      this.flashCell(cell);
+      this.setStatus(`${result.reason ?? '放置失败'}（${def.label}）`);
+    }
+  }
+
+  private refreshAll(): void {
+    this.refreshGrid();
+    this.refreshCapacity();
+    this.refreshHighlight();
+  }
+
+  /** 清空网格图形，重绘已放置物品。 */
+  private refreshGrid(): void {
+    for (const cell of this.cellNodes) {
+      const g = cell.getComponent(Graphics);
+      if (g !== null) {
+        g.clear();
+        g.fillColor = new Color(38, 43, 40, 255);
+        g.roundRect(-CELL_SIZE / 2, -CELL_SIZE / 2, CELL_SIZE, CELL_SIZE, 10);
+        g.fill();
+      }
+    }
+    for (const item of this.trunk.items) {
+      this.drawItem(item);
+    }
+  }
+
+  private drawItem(item: PlacedItem): void {
+    const def = itemDef(DEFAULT_ITEM_DEFS, item.itemId);
+    const [w, h] = sizeToCell(def.size);
+    const cellNode = this.cellNodeAt(item.x, item.y);
+    if (cellNode === null) return;
+    const g = cellNode.getComponent(Graphics);
+    if (g === null) return;
+    g.fillColor = ITEM_COLORS[def.id] ?? new Color(150, 150, 150, 255);
+    g.roundRect(
+      -CELL_SIZE / 2,
+      -CELL_SIZE / 2,
+      CELL_SIZE * w + CELL_GAP * (w - 1),
+      CELL_SIZE * h + CELL_GAP * (h - 1),
+      10,
+    );
+    g.fill();
+    g.strokeColor = new Color(240, 228, 201, 255);
+    g.lineWidth = 2;
+    g.rect(
+      -CELL_SIZE / 2,
+      -CELL_SIZE / 2,
+      CELL_SIZE * w + CELL_GAP * (w - 1),
+      CELL_SIZE * h + CELL_GAP * (h - 1),
+    );
+    g.stroke();
+    // 物品标签
+    const label = cellNode.getComponent(Label) ?? cellNode.addComponent(Label);
+    label.string = def.label;
+    label.fontSize = 22;
+    label.lineHeight = 26;
+    label.color = new Color(250, 244, 226, 255);
+    label.horizontalAlign = Label.HorizontalAlign.CENTER;
+    label.verticalAlign = Label.VerticalAlign.CENTER;
+    // 多格物品标签居中于整个形状
+    label.node.setPosition((w - 1) * (CELL_SIZE + CELL_GAP) / 2, -(h - 1) * (CELL_SIZE + CELL_GAP) / 2, 0);
+  }
+
+  private refreshCapacity(): void {
+    const used = usedCells(this.trunk, DEFAULT_ITEM_DEFS);
+    if (this.capacityLabel !== null) {
+      this.capacityLabel.string = `已用 ${used} / ${TRUNK_CAPACITY} 格`;
+    }
+  }
+
+  private refreshHighlight(): void {
+    if (this.selectedItem === null) {
+      for (const cell of this.cellNodes) {
+        this.setCellHighlight(cell, false);
+      }
+      return;
+    }
+    const def = itemDef(DEFAULT_ITEM_DEFS, this.selectedItem);
+    for (const cell of this.cellNodes) {
+      const match = /Cell-(\d+)-(\d+)/.exec(cell.name);
+      if (match === null) continue;
+      const x = Number(match[1]);
+      const y = Number(match[2]);
+      const can = canPlace(this.trunk, def, x, y);
+      this.setCellHighlight(cell, can);
+    }
+  }
+
+  private setCellHighlight(cell: Node, on: boolean): void {
+    const g = cell.getComponent(Graphics);
+    if (g === null) return;
+    const idx = this.cellNodeIndex(cell);
+    // 若格子上已有物品，不高亮
+    if (idx >= 0 && this.trunk.grid[idx] !== null) {
+      return;
+    }
+    Tween.stopAllByTarget(g);
+    if (on) {
+      g.fillColor = HIGHLIGHT.clone();
+    } else {
+      g.fillColor = new Color(38, 43, 40, 255);
+    }
+  }
+
+  private flashCell(cell: Node): void {
+    const g = cell.getComponent(Graphics);
+    if (g === null) return;
+    Tween.stopAllByTarget(g);
+    g.fillColor = ERROR_FLASH.clone();
+    Tween(g)
+      .to(0.3, { })
+      .call(() => {
+        this.refreshGrid();
+      })
+      .start();
+  }
+
+  private cellNodeAt(x: number, y: number): Node | null {
+    const name = `Cell-${x}-${y}`;
+    for (const cell of this.cellNodes) {
+      if (cell.name === name) return cell;
+    }
+    return null;
+  }
+
+  private cellNodeIndex(cell: Node): number {
+    return this.cellNodes.indexOf(cell);
   }
 
   private persist(message: string): void {
-    this.storage.set(SAVE_KEY, encodePrototypeState(this.state));
-    this.layoutCards();
+    this.storage.set(SAVE_KEY, encodeTrunkState(this.trunk));
+    this.refreshAll();
     this.setStatus(`${message} · 已保存`);
   }
 
-  private layoutCards(): void {
-    ITEM_IDS.forEach((item) => {
-      const card = this.cards.get(item);
-      if (card === undefined) {
-        return;
-      }
-      const slot = this.state.trunkSlots.indexOf(item);
-      card.setPosition(slot >= 0 ? new Vec3(SLOT_X[slot] ?? 0, SLOT_Y, 0) : this.homePositions.get(item) ?? Vec3.ZERO);
-    });
+  private createPanelBackground(parent: Node, w: number, h: number, color: Color): void {
+    const panel = new Node('Panel');
+    panel.setParent(parent);
+    panel.setPosition(0, 0, -1);
+    panel.addComponent(UITransform).setContentSize(w, h);
+    const g = panel.addComponent(Graphics);
+    g.fillColor = color;
+    g.roundRect(-w / 2, -h / 2, w, h, 14);
+    g.fill();
   }
 
-  private createPanel(name: string, x: number, y: number, width: number, height: number, color: Color): Node {
-    const panel = new Node(name);
-    panel.setParent(this.node);
-    panel.setPosition(x, y, 0);
-    panel.addComponent(UITransform).setContentSize(width, height);
-    const graphics = panel.addComponent(Graphics);
-    graphics.fillColor = color;
-    graphics.roundRect(-width / 2, -height / 2, width, height, 14);
-    graphics.fill();
-    return panel;
+  private createButton(name: string, text: string, x: number, y: number, onClick: () => void): void {
+    const btn = new Node(name);
+    btn.setParent(this.node);
+    btn.setPosition(x, y, 0);
+    btn.addComponent(UITransform).setContentSize(260, 60);
+    const g = btn.addComponent(Graphics);
+    g.fillColor = new Color(92, 76, 60, 255);
+    g.roundRect(-130, -30, 260, 60, 12);
+    g.fill();
+    const label = btn.addComponent(Label);
+    label.string = text;
+    label.fontSize = 24;
+    label.lineHeight = 28;
+    label.color = new Color(240, 228, 201, 255);
+    label.horizontalAlign = Label.HorizontalAlign.CENTER;
+    label.verticalAlign = Label.VerticalAlign.CENTER;
+    btn.on(Node.EventType.TOUCH_END, onClick);
   }
 
-  private createLabel(name: string, text: string, x: number, y: number, fontSize: number, color: Color): Label {
+  private createLabel(
+    name: string,
+    text: string,
+    x: number,
+    y: number,
+    fontSize: number,
+    color: Color,
+    parent?: Node,
+  ): Label {
+    const target = parent ?? this.node;
     const labelNode = new Node(name);
-    labelNode.setParent(this.node);
+    labelNode.setParent(target);
     labelNode.setPosition(x, y, 0);
     labelNode.addComponent(UITransform).setContentSize(680, Math.max(60, fontSize * 1.5));
     const label = labelNode.addComponent(Label);
