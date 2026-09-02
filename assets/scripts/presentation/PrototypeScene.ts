@@ -7,10 +7,7 @@ import {
   Node,
   ResolutionPolicy,
   UITransform,
-  Vec3,
   view,
-  Tween,
-  EventTouch,
 } from 'cc';
 import {
   createTrunkState,
@@ -157,11 +154,15 @@ export class PrototypeScene extends Component {
     card.setParent(this.cargoArea);
     card.setPosition(x, y, 0);
     card.addComponent(UITransform).setContentSize(100, 100);
+    // Graphics 与 Label 不能同节点（Cocos 禁止挂两个渲染组件），文字放子节点
     const g = card.addComponent(Graphics);
     g.fillColor = ITEM_COLORS[def.id] ?? new Color(150, 150, 150, 255);
     g.roundRect(-50, -50, 100, 100, 10);
     g.fill();
-    const label = card.addComponent(Label);
+    const labelNode = new Node(`CargoLabel-${def.id}`);
+    labelNode.setParent(card);
+    labelNode.addComponent(UITransform).setContentSize(100, 100);
+    const label = labelNode.addComponent(Label);
     label.string = def.label;
     label.fontSize = 20;
     label.lineHeight = 24;
@@ -221,6 +222,10 @@ export class PrototypeScene extends Component {
         g.roundRect(-CELL_SIZE / 2, -CELL_SIZE / 2, CELL_SIZE, CELL_SIZE, 10);
         g.fill();
       }
+      const labelNode = cell.getChildByName('ItemLabel');
+      if (labelNode !== null) {
+        labelNode.destroy();
+      }
     }
     for (const item of this.trunk.items) {
       this.drawItem(item);
@@ -252,8 +257,17 @@ export class PrototypeScene extends Component {
       CELL_SIZE * h + CELL_GAP * (h - 1),
     );
     g.stroke();
-    // 物品标签
-    const label = cellNode.getComponent(Label) ?? cellNode.addComponent(Label);
+    // 物品标签放子节点（Graphics 与 Label 不能同节点）
+    let labelNode = cellNode.getChildByName('ItemLabel');
+    if (labelNode === null) {
+      labelNode = new Node('ItemLabel');
+      labelNode.setParent(cellNode);
+      labelNode.addComponent(UITransform).setContentSize(CELL_SIZE, CELL_SIZE);
+    }
+    let label = labelNode.getComponent(Label);
+    if (label === null) {
+      label = labelNode.addComponent(Label);
+    }
     label.string = def.label;
     label.fontSize = 22;
     label.lineHeight = 26;
@@ -261,7 +275,7 @@ export class PrototypeScene extends Component {
     label.horizontalAlign = Label.HorizontalAlign.CENTER;
     label.verticalAlign = Label.VerticalAlign.CENTER;
     // 多格物品标签居中于整个形状
-    label.node.setPosition((w - 1) * (CELL_SIZE + CELL_GAP) / 2, -(h - 1) * (CELL_SIZE + CELL_GAP) / 2, 0);
+    labelNode.setPosition((w - 1) * (CELL_SIZE + CELL_GAP) / 2, -(h - 1) * (CELL_SIZE + CELL_GAP) / 2, 0);
   }
 
   private refreshCapacity(): void {
@@ -297,25 +311,25 @@ export class PrototypeScene extends Component {
     if (idx >= 0 && this.trunk.grid[idx] !== null) {
       return;
     }
-    Tween.stopAllByTarget(g);
-    if (on) {
-      g.fillColor = HIGHLIGHT.clone();
-    } else {
-      g.fillColor = new Color(38, 43, 40, 255);
-    }
+    // Graphics 只渲染已发出的绘制指令，改色必须重绘才生效
+    g.clear();
+    g.fillColor = on ? HIGHLIGHT.clone() : new Color(38, 43, 40, 255);
+    g.roundRect(-CELL_SIZE / 2, -CELL_SIZE / 2, CELL_SIZE, CELL_SIZE, 10);
+    g.fill();
   }
 
   private flashCell(cell: Node): void {
     const g = cell.getComponent(Graphics);
     if (g === null) return;
-    Tween.stopAllByTarget(g);
+    g.clear();
     g.fillColor = ERROR_FLASH.clone();
-    Tween(g)
-      .to(0.3, { })
-      .call(() => {
-        this.refreshGrid();
-      })
-      .start();
+    g.roundRect(-CELL_SIZE / 2, -CELL_SIZE / 2, CELL_SIZE, CELL_SIZE, 10);
+    g.fill();
+    // 短暂展示错误色后恢复网格绘制
+    this.scheduleOnce(() => {
+      this.refreshGrid();
+      this.refreshHighlight();
+    }, 0.3);
   }
 
   private cellNodeAt(x: number, y: number): Node | null {
@@ -356,7 +370,11 @@ export class PrototypeScene extends Component {
     g.fillColor = new Color(92, 76, 60, 255);
     g.roundRect(-130, -30, 260, 60, 12);
     g.fill();
-    const label = btn.addComponent(Label);
+    // 按钮文字放子节点（Graphics 与 Label 不能同节点）
+    const labelNode = new Node(`${name}Label`);
+    labelNode.setParent(btn);
+    labelNode.addComponent(UITransform).setContentSize(260, 60);
+    const label = labelNode.addComponent(Label);
     label.string = text;
     label.fontSize = 24;
     label.lineHeight = 28;
