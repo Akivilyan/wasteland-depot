@@ -8,5 +8,9 @@
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true
-  }
+  },
+  /* 微信小游戏官方类型（wx 全局），与 Cocos 引擎声明并存 */
+  "files": [
+    "./node_modules/minigame-api-typings/index.d.ts"
+  ]
 }
