@@ -8,6 +8,7 @@ import {
   _decorator,
   Color,
   Component,
+  EventTouch,
   Graphics,
   Label,
   Node,
@@ -31,7 +32,30 @@ import {
   decodeTripState,
 } from '../core/route.ts';
 import { LOCATIONS } from '../core/game.ts';
+import type { ResourceId, ResourceStock } from '../core/game.ts';
+import type { LootState } from '../core/loot.ts';
+import {
+  rollNodeLoot,
+  takeLoot,
+  putBackLoot,
+  remainingLoot,
+  encodeLootState,
+  decodeLootState,
+} from '../core/loot.ts';
+import {
+  createTrunkState,
+  TrunkState,
+  firstFreeSpot,
+  placeItem,
+  itemDef,
+  sizeToCell,
+  encodeTrunkState,
+  decodeTrunkState,
+  DEFAULT_ITEM_DEFS,
+} from '../core/trunk.ts';
+import { createRng } from '../core/rng.ts';
 import { createStoragePort, StoragePort } from '../platform/storage.ts';
+import { TrunkGrid, ITEM_COLORS } from './TrunkGrid.ts';
 
 const { ccclass } = _decorator;
 
@@ -39,6 +63,16 @@ const DESIGN_WIDTH = 750;
 const DESIGN_HEIGHT = 1334;
 
 const SAVE_KEY = 'wasteland-depot.trip.v1';
+const LOOT_SAVE_KEY = 'wasteland-depot.loot.v1';
+const TRUNK_SAVE_KEY = 'wasteland-depot.trip-trunk.v1';
+/** 抵仓时每件货舱物品折算进据点库存的数量（amount 即件数）。 */
+const CARGO_TO_STOCK: Record<string, ResourceId> = {
+  food: 'food',
+  medicine: 'medicine',
+  fuel: 'fuel',
+  material: 'material',
+  ammo: 'ammo',
+};
 
 // —— 地图骨架几何 ——
 const MAP_TOP = 520;          // 最远节点 y
@@ -80,6 +114,8 @@ interface DriveContext {
 export class TravelScene extends Component {
   private readonly storage: StoragePort = createStoragePort();
   private trip: TripState = createTripState();
+  private loot: LootState | null = null;
+  private nodeTrunk: TrunkState = createTrunkState();
 
   private mapRoot: Node | null = null;
   private driveRoot: Node | null = null;
@@ -89,13 +125,28 @@ export class TravelScene extends Component {
   private fuel = 12;
   private driveTween: Tween<Vec3> | null = null;
   private driveCtx: DriveContext | null = null;
+  /** 节点面板（候选物资 + 货舱）运行期节点；返程时销毁。 */
+  private nodePanel: Node | null = null;
+  private nodeGrid: TrunkGrid | null = null;
+  private nodeLootCards: Map<string, Node> = new Map();
+  private nodeStatus: Label | null = null;
+  /** 据点库存（SLICE_005 将替换为 sim.GameState）。 */
+  private stock: ResourceStock = {
+    fuel: 8, food: 8, material: 4, medicine: 3, ammo: 6,
+  };
 
   start(): void {
     this.node.getComponent(UITransform)?.setContentSize(DESIGN_WIDTH, DESIGN_HEIGHT);
     this.trip = decodeTripState(this.storage.get(SAVE_KEY));
+    this.loot = decodeLootState(this.storage.get(LOOT_SAVE_KEY));
+    this.nodeTrunk = decodeTrunkState(this.storage.get(TRUNK_SAVE_KEY));
     this.buildDriveLayer();
     this.buildMap();
     this.refreshStatus();
+    // 恢复到 atNode 相位时重建节点面板
+    if (this.trip.phase === 'atNode' && this.trip.destination !== null) {
+      this.showNodeArrival(this.tripDestinationLabel(this.trip.destination));
+    }
   }
 
   /** 由 PrototypeScene/外部同步当前燃油（出发合法性用）。 */
@@ -107,6 +158,11 @@ export class TravelScene extends Component {
   /** 当前行程态（供外部读取）。 */
   get currentTrip(): TripState {
     return this.trip;
+  }
+
+  /** 据点库存快照（SLICE_005 接 GameState 前的临时读取口）。 */
+  get stockSnapshot(): ResourceStock {
+    return { ...this.stock };
   }
 
   // —— 地图骨架 ——
@@ -397,47 +453,230 @@ export class TravelScene extends Component {
 
   private readonly finishDriveCallback = (): void => this.finishDrive();
 
-  // —— 抵达节点 ——
+  // —— 抵达节点（SLICE_004：候选物资 → 货舱取舍）——
 
   private showNodeArrival(destLabel: string): void {
     if (this.mapRoot === null) return;
     this.mapRoot.active = true;
-    const panel = new Node('ArrivalPanel');
+    this.closeNodePanel();
+
+    // 战利品会话：恢复或新抽（seed 用时间戳，表现层一次性会话不要求可重放）
+    if (this.loot === null || this.loot.location !== this.trip.destination) {
+      const seed = Date.now() % 2147483647;
+      this.loot = rollNodeLoot(this.trip.destination as never, createRng(seed), seed);
+      this.persistLoot();
+    }
+
+    const panel = new Node('NodePanel');
     panel.setParent(this.node);
-    panel.addComponent(UITransform).setContentSize(600, 400);
-    panel.setPosition(0, 60, 0);
+    panel.addComponent(UITransform).setContentSize(700, 1180);
+    panel.setPosition(0, 0, 0);
     const g = panel.addComponent(Graphics);
     g.fillColor = new Color(55, 62, 57, 255);
-    g.roundRect(-300, -200, 600, 400, 16);
+    g.roundRect(-350, -590, 700, 1180, 16);
     g.fill();
+    // 拦截触摸，防止点穿地图
+    for (const evt of [Node.EventType.TOUCH_START, Node.EventType.TOUCH_MOVE, Node.EventType.TOUCH_END]) {
+      panel.on(evt, (e: EventTouch) => e.preventSwallow());
+    }
+    this.nodePanel = panel;
 
-    const text = new Node('ArrivalText');
-    text.setParent(panel);
-    text.addComponent(UITransform).setContentSize(560, 300);
-    const tl = text.addComponent(Label);
-    tl.string = `抵达 ${destLabel}\n\n（本切片只验证演出手感：\n节点交互将在下一切片接入货舱）`;
-    tl.fontSize = 24;
-    tl.lineHeight = 34;
-    tl.color = COLOR_TEXT;
-    tl.horizontalAlign = Label.HorizontalAlign.CENTER;
-    tl.verticalAlign = Label.VerticalAlign.CENTER;
+    this.createLabel(panel, 'NodeTitle', `抵达 · ${destLabel}`, 0, 540, 30, COLOR_TEXT);
+    this.createLabel(panel, 'NodeHint', '点候选卡装入货舱 · 点已装物品取回 · 装不下就只能放弃', 0, 496, 18, COLOR_DIM);
+    this.nodeStatus = this.createLabel(panel, 'NodeStatus', '', 0, -500, 20, COLOR_DIM);
 
-    this.createButton(panel, 'ReturnBtn', '返程', 0, -150, () => {
-      panel.destroy();
-      this.trip = departReturn(this.trip);
-      this.persistTrip();
-      this.startDrive({ destLabel, returning: true, onArrive: () => {
-        this.trip = backToMap(this.trip);
-        this.persistTrip();
-        this.refreshStatus();
-      } });
+    // —— 候选物资卡（未带走的）——
+    const cardsRoot = new Node('LootCards');
+    cardsRoot.setParent(panel);
+    cardsRoot.setPosition(0, 380, 0);
+    this.nodeLootCards = new Map();
+    const remaining = remainingLoot(this.loot);
+    remaining.forEach((roll, i) => {
+      const card = this.createLootCard(cardsRoot, roll.itemId, i, remaining.length);
+      this.nodeLootCards.set(roll.itemId, card);
     });
+    if (remaining.length === 0) {
+      this.createLabel(cardsRoot, 'NoLoot', '候选物资已全部处理', 0, 0, 22, COLOR_DIM);
+    }
+
+    // —— 货舱网格（复用 TrunkGrid，缩小放置）——
+    const gridHost = new Node('GridHost');
+    gridHost.setParent(panel);
+    gridHost.setPosition(0, -20, 0);
+    this.nodeGrid = new TrunkGrid(gridHost, DEFAULT_ITEM_DEFS, {
+      scale: 0.62,
+      initialState: this.nodeTrunk,
+      removeOnTap: true,
+      onChange: (state, ok, reason) => {
+        if (ok) {
+          this.nodeTrunk = state;
+          this.persistNodeTrunk();
+          if (this.nodeStatus !== null) {
+            this.nodeStatus.string = '已装载';
+          }
+        } else if (this.nodeStatus !== null && reason !== undefined) {
+          this.nodeStatus.string = reason;
+        }
+      },
+      onItemRemoved: (itemId, amount) => {
+        // 整组取回 → 候选卡还原（loot 与货舱一一对应：一件候选 = 一件货舱物品）
+        if (this.loot !== null) {
+          const back = putBackLoot(this.loot, itemId as never, amount);
+          this.loot = back.state;
+          this.persistLoot();
+          this.rebuildLootCards();
+        }
+      },
+    });
+
+    this.createButton(panel, 'ReturnBtn', '返程', 0, -560, () => this.onReturnFromNode(destLabel));
+    this.refreshLootCardDim();
+  }
+
+  private createLootCard(parent: Node, itemId: string, index: number, total: number): Node {
+    const def = itemDef(DEFAULT_ITEM_DEFS, itemId);
+    const card = new Node(`Loot-${itemId}`);
+    card.setParent(parent);
+    const spacing = 128;
+    const x = (index - (total - 1) / 2) * spacing;
+    card.setPosition(x, 0, 0);
+    card.addComponent(UITransform).setContentSize(110, 110);
+    const g = card.addComponent(Graphics);
+    g.fillColor = ITEM_COLORS[itemId] ?? new Color(150, 150, 150, 255);
+    g.roundRect(-55, -55, 110, 110, 12);
+    g.fill();
+    const labelNode = new Node(`LootLabel-${itemId}`);
+    labelNode.setParent(card);
+    labelNode.addComponent(UITransform).setContentSize(110, 110);
+    const label = labelNode.addComponent(Label);
+    label.string = `${def.label}\n${def.size}`;
+    label.fontSize = 20;
+    label.lineHeight = 24;
+    label.color = new Color(250, 244, 226, 255);
+    label.horizontalAlign = Label.HorizontalAlign.CENTER;
+    label.verticalAlign = Label.VerticalAlign.CENTER;
+    card.on(Node.EventType.TOUCH_END, () => this.onLootCardTapped(itemId));
+    return card;
+  }
+
+  private onLootCardTapped(itemId: string): void {
+    if (this.loot === null || this.nodeGrid === null) return;
+    // 已选中的货舱物品类型 → 选中态即「准备装入」：直接找第一个空位自动放置
+    const spot = firstFreeSpot(this.nodeGrid.state, itemDef(DEFAULT_ITEM_DEFS, itemId));
+    if (spot === null) {
+      if (this.nodeStatus !== null) {
+        this.nodeStatus.string = '货舱放不下了';
+      }
+      return;
+    }
+    const result = placeItem(this.nodeGrid.state, DEFAULT_ITEM_DEFS, itemId, spot.x, spot.y);
+    if (!result.ok) {
+      if (this.nodeStatus !== null && result.reason !== undefined) {
+        this.nodeStatus.string = result.reason;
+      }
+      return;
+    }
+    const taken = takeLoot(this.loot, itemId as never);
+    if (!taken.ok) {
+      // 理论不可达：卡存在才能点
+      return;
+    }
+    this.loot = taken.state;
+    this.nodeTrunk = result.state;
+    this.nodeGrid.setState(this.nodeTrunk);
+    this.persistLoot();
+    this.persistNodeTrunk();
+    if (this.nodeStatus !== null) {
+      const def = itemDef(DEFAULT_ITEM_DEFS, itemId);
+      this.nodeStatus.string = `${def.label}已装入货舱`;
+    }
+    this.rebuildLootCards();
+  }
+
+  /** 重建候选卡（装舱后移除该卡，取回后恢复）。 */
+  private rebuildLootCards(): void {
+    if (this.nodePanel === null) return;
+    const cardsRoot = this.nodePanel.getChildByName('LootCards');
+    if (cardsRoot !== null) {
+      // destroy 是帧末生效；先立即脱离节点树，避免同帧新旧两棵候选卡并存
+      cardsRoot.removeFromParent();
+      cardsRoot.destroy();
+    }
+    if (this.loot === null) return;
+    const fresh = new Node('LootCards');
+    fresh.setParent(this.nodePanel);
+    fresh.setPosition(0, 380, 0);
+    this.nodeLootCards = new Map();
+    const remaining = remainingLoot(this.loot);
+    remaining.forEach((roll, i) => {
+      const card = this.createLootCard(fresh, roll.itemId, i, remaining.length);
+      this.nodeLootCards.set(roll.itemId, card);
+    });
+    if (remaining.length === 0) {
+      this.createLabel(fresh, 'NoLoot', '候选物资已全部处理', 0, 0, 22, COLOR_DIM);
+    }
+  }
+
+  /** 已不在候选区的物品卡置灰（防御性：重建时保证一致性）。 */
+  private refreshLootCardDim(): void {
+    if (this.loot === null) return;
+    for (const [itemId, card] of this.nodeLootCards) {
+      const stillThere = this.loot.rolls.some((r) => r.itemId === itemId && !r.taken);
+      card.active = stillThere;
+    }
+  }
+
+  private closeNodePanel(): void {
+    if (this.nodePanel !== null) {
+      this.nodePanel.destroy();
+      this.nodePanel = null;
+    }
+    this.nodeGrid = null;
+    this.nodeLootCards = new Map();
+    this.nodeStatus = null;
+  }
+
+  private onReturnFromNode(destLabel: string): void {
+    this.closeNodePanel();
+    this.trip = departReturn(this.trip);
+    this.persistTrip();
+    this.startDrive({ destLabel, returning: true, onArrive: () => {
+      this.settleCargoToStock();
+      // 结算会把带回来的油折进库存；表现层油量表直接吃库存快照（SLICE_005 接 GameState）
+      this.fuel = this.stock.fuel;
+      this.trip = backToMap(this.trip);
+      this.loot = null;
+      this.nodeTrunk = createTrunkState();
+      this.storage.remove(LOOT_SAVE_KEY);
+      this.storage.remove(TRUNK_SAVE_KEY);
+      this.persistTrip();
+      this.refreshStatus();
+    } });
+  }
+
+  /** 抵仓结算：货舱物品按映射折算进据点库存（SLICE_005 换成 returnHome）。 */
+  private settleCargoToStock(): void {
+    let stock: ResourceStock = { ...this.stock };
+    for (const item of this.nodeTrunk.items) {
+      const resourceId = CARGO_TO_STOCK[item.itemId];
+      if (resourceId === undefined) continue;
+      stock = { ...stock, [resourceId]: stock[resourceId] + item.amount };
+    }
+    this.stock = stock;
+    // 结算即落袋，行程货舱清空
+    this.nodeTrunk = createTrunkState();
+    this.storage.remove(TRUNK_SAVE_KEY);
   }
 
   private finishTripVisualOnly(): void {
     // 「返回」：放弃当前行程（仅演出态回地图；燃油不退——决策在规则层）
     if (this.trip.phase === 'map') return;
+    this.closeNodePanel();
     this.trip = backToMap(this.trip);
+    this.loot = null;
+    this.nodeTrunk = createTrunkState();
+    this.storage.remove(LOOT_SAVE_KEY);
+    this.storage.remove(TRUNK_SAVE_KEY);
     this.persistTrip();
     if (this.driveRoot !== null) {
       this.finishDrive();
@@ -449,6 +688,16 @@ export class TravelScene extends Component {
 
   private persistTrip(): void {
     this.storage.set(SAVE_KEY, encodeTripState(this.trip));
+  }
+
+  private persistLoot(): void {
+    if (this.loot !== null) {
+      this.storage.set(LOOT_SAVE_KEY, encodeLootState(this.loot));
+    }
+  }
+
+  private persistNodeTrunk(): void {
+    this.storage.set(TRUNK_SAVE_KEY, encodeTrunkState(this.nodeTrunk));
   }
 
   private createLabel(parent: Node, name: string, text: string, x: number, y: number, fontSize: number, color: Color): Label {

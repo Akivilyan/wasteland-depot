@@ -56,6 +56,7 @@ export const DEFAULT_ITEM_DEFS: readonly TrunkItemDef[] = [
   { id: 'medicine', resource: 'medicine', label: '药品', size: '1x1', maxStack: 3 },
   { id: 'fuel', resource: 'fuel', label: '燃油', size: '2x1', maxStack: 3 },
   { id: 'material', resource: 'material', label: '材料', size: '2x1', maxStack: 3 },
+  { id: 'ammo', resource: 'ammo', label: '弹药', size: '1x1', maxStack: 5 },
   { id: 'survivor', resource: 'medicine', label: '幸存者', size: '2x2', maxStack: 1 },
 ];
 
