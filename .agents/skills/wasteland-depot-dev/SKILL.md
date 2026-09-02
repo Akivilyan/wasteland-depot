@@ -9,11 +9,13 @@ Keep the first deliverable a small, complete WeChat Mini Game. Treat PC as a lat
 
 ## Preserve the boundaries
 
-- Keep deterministic game rules under `assets/scripts/core`; files there must not import `cc` or access `wx`.
-- Keep Cocos nodes, components, input, animation, and layout under `assets/scripts/presentation`.
+The authoritative, current definition of the layering, per-file responsibilities, save keys, and the reuse-vs-build list is `docs/ARCHITECTURE.md` (enforced statically by `tools/verify-project.mjs`). Summary:
+
+- Keep deterministic game rules under `assets/scripts/core`; files there must not import `cc` or access `wx`. All randomness goes through `core/rng.ts`.
+- Keep Cocos nodes, components, input, animation, and layout under `assets/scripts/presentation`; it renders and routes input into core commands, never mutates rule data directly.
 - Keep storage, ads, login, sharing, and lifecycle APIs under `assets/scripts/platform`. Access `wx` only through a platform adapter.
 - Keep the first prototype 2D and portrait. Do not add 3D, a physics engine, skeletal animation, networking, or a third-party runtime without a demonstrated need.
-- Ads must remain optional and user-initiated. Do not add banners, splash ads, forced interstitials, or progression tuned to manufacture ad pain.
+- Ads must remain optional and user-initiated (product baseline in `docs/GAME_SKELETON.md` §11). Do not add banners, splash ads, forced interstitials, or progression tuned to manufacture ad pain.
 
 ## Work through repeatable commands
 
