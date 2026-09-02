@@ -45,7 +45,9 @@ const MAP_TOP = 520;          // 最远节点 y
 const MAP_BOTTOM = -420;      // 仓库 y
 const MAP_ROAD_X = -80;       // 公路竖轴线 x
 const NODE_X_OFFSET = 180;    // 节点牌相对公路的水平偏移
-const NODE_ALT_X = -260;      // 节点牌交替侧偏移（避免文字出屏）
+const NODE_ALT_X = -140;      // 节点牌另一侧偏移（须保证牌左缘 ≥ -375 出屏界）
+const STATUS_Y = -580;        // 状态文字行（按钮上方，避免互相遮挡）
+const BTN_Y = -664;           // 底部按钮行
 
 const COLOR_ROAD = new Color(96, 92, 82, 255);
 const COLOR_NODE_IDLE = new Color(70, 78, 72, 255);
@@ -121,10 +123,14 @@ export class TravelScene extends Component {
     bgG.fillColor = new Color(27, 31, 29, 255);
     bgG.rect(-DESIGN_WIDTH / 2, -DESIGN_HEIGHT / 2, DESIGN_WIDTH, DESIGN_HEIGHT);
     bgG.fill();
+    // 拦截触摸，防止点穿到下面的货舱 UI
+    bg.on(Node.EventType.TOUCH_END, (e) => e.preventSwallow());
+    bg.on(Node.EventType.TOUCH_START, (e) => e.preventSwallow());
+    bg.on(Node.EventType.TOUCH_MOVE, (e) => e.preventSwallow());
 
     this.createLabel(root, 'MapTitle', '路线图 · 选择目的地', 0, 620, 36, COLOR_TEXT);
-    this.statusLabel = this.createLabel(root, 'MapStatus', '', 0, -620, 22, COLOR_DIM);
-    this.createButton(root, 'BackDepot', '返回', 300, -620, () => this.finishTripVisualOnly());
+    this.statusLabel = this.createLabel(root, 'MapStatus', '', 0, STATUS_Y, 22, COLOR_DIM);
+    this.createButton(root, 'BackDepot', '返回', 300, BTN_Y, () => this.finishTripVisualOnly());
 
     // 公路主干（竖线 + 端点箭头感）
     const road = new Node('RoadLine');
@@ -147,17 +153,18 @@ export class TravelScene extends Component {
 
     // 节点：仓库在底部，地点沿线上分布
     const minKm = DEPOT_ROUTE[DEPOT_ROUTE.length - 1].km;
-    for (const node of DEPOT_ROUTE) {
+    DEPOT_ROUTE.forEach((node, idx) => {
       const t = node.km / minKm;
       const y = MAP_BOTTOM + t * (MAP_TOP - MAP_BOTTOM);
-      this.createRouteNode(root, node, y);
-    }
+      this.createRouteNode(root, node, y, idx);
+    });
   }
 
-  private createRouteNode(parent: Node, node: RouteNode, y: number): void {
+  private createRouteNode(parent: Node, node: RouteNode, y: number, idx: number): void {
     const isDepot = node.id === 'depot';
     const label = isDepot ? '仓库' : (LOCATIONS.find((l) => l.id === node.id)?.label ?? String(node.id));
-    const sideX = MAP_ROAD_X + (node.km % 20 === 0 ? NODE_X_OFFSET : NODE_ALT_X);
+    // 按索引左右交替摆放；偏移从公路线起算，保证牌身完整在屏内（左缘 ≥ -360）
+    const sideX = MAP_ROAD_X + (idx % 2 === 0 ? NODE_X_OFFSET : NODE_ALT_X);
 
     const plate = new Node(`Node-${node.id}`);
     plate.setParent(parent);
@@ -245,7 +252,7 @@ export class TravelScene extends Component {
     if (this.goButton === null) {
       this.goButton = this.mapRoot?.getChildByName('GoBtn') ?? null;
       if (this.goButton === null && this.mapRoot !== null) {
-        this.createButton(this.mapRoot, 'GoBtn', '出发', 0, -620, () => this.onGo());
+        this.createButton(this.mapRoot, 'GoBtn', '出发', 0, BTN_Y, () => this.onGo());
         this.goButton = this.mapRoot.getChildByName('GoBtn');
       }
     }
