@@ -8,7 +8,6 @@ import {
   _decorator,
   Color,
   Component,
-  EventTouch,
   Graphics,
   Label,
   Node,
@@ -179,10 +178,13 @@ export class TravelScene extends Component {
     bgG.fillColor = new Color(27, 31, 29, 255);
     bgG.rect(-DESIGN_WIDTH / 2, -DESIGN_HEIGHT / 2, DESIGN_WIDTH, DESIGN_HEIGHT);
     bgG.fill();
-    // 拦截触摸，防止点穿到下面的货舱 UI
-    bg.on(Node.EventType.TOUCH_END, (e) => e.preventSwallow());
-    bg.on(Node.EventType.TOUCH_START, (e) => e.preventSwallow());
-    bg.on(Node.EventType.TOUCH_MOVE, (e) => e.preventSwallow());
+    // 拦截触摸，防止点穿到下面的货舱 UI。
+    // Cocos 3.8：节点注册触摸监听后命中即默认吞掉事件（EventTouch.preventSwallow
+    // 是布尔属性，非方法——调它会在真实触摸时抛 TypeError 并中断派发链）。
+    const swallow = (): void => undefined;
+    bg.on(Node.EventType.TOUCH_END, swallow);
+    bg.on(Node.EventType.TOUCH_START, swallow);
+    bg.on(Node.EventType.TOUCH_MOVE, swallow);
 
     this.createLabel(root, 'MapTitle', '路线图 · 选择目的地', 0, 620, 36, COLOR_TEXT);
     this.statusLabel = this.createLabel(root, 'MapStatus', '', 0, STATUS_Y, 22, COLOR_DIM);
@@ -475,9 +477,9 @@ export class TravelScene extends Component {
     g.fillColor = new Color(55, 62, 57, 255);
     g.roundRect(-350, -590, 700, 1180, 16);
     g.fill();
-    // 拦截触摸，防止点穿地图
+    // 拦截触摸，防止点穿地图（注册监听即默认吞掉，空回调即可，见 buildMap 内注释）
     for (const evt of [Node.EventType.TOUCH_START, Node.EventType.TOUCH_MOVE, Node.EventType.TOUCH_END]) {
-      panel.on(evt, (e: EventTouch) => e.preventSwallow());
+      panel.on(evt, (): void => undefined);
     }
     this.nodePanel = panel;
 
