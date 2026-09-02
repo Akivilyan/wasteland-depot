@@ -224,6 +224,9 @@ export class PrototypeScene extends Component {
       }
       const labelNode = cell.getChildByName('ItemLabel');
       if (labelNode !== null) {
+        // destroy 是帧末延迟销毁；同帧 drawItem 会经 getChildByName 找回死节点复用，
+        // 帧末被销毁导致标签消失。先立即脱离节点树再销毁。
+        labelNode.removeFromParent();
         labelNode.destroy();
       }
     }
