@@ -46,3 +46,7 @@ if [[ $status -ne 0 ]]; then
 fi
 
 node "$project_root/tools/verify-build.mjs" "$target"
+
+if [[ "$target" == "wechat" ]]; then
+  node "$project_root/tools/patch-wechat-deprecated.mjs" "$project_root/build/wechatgame"
+fi
