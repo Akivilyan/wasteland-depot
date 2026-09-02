@@ -53,3 +53,6 @@ export const DANGER_GROWTH_PER_DAY = 1;
 
 /** 目标：存活到第 10 天结束（GAME_SKELETON 13 节最终目标未确认，此处为默认值）。 */
 export const FINAL_DAY_INDEX = GAME_DAYS - 1;
+
+/** 单程油耗换算：每 10km 公路消耗 1 燃油（向上取整，最低 1）。SLICE_003 默认值。 */
+export const LEG_FUEL_PER_10KM = 1;

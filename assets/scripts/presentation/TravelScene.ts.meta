@@ -1,0 +1,13 @@
+{
+  "ver": "4.0.24",
+  "importer": "typescript",
+  "imported": true,
+  "uuid": "3597d4b6-1d69-4d9b-b9fb-4029dd09e1df",
+  "files": [],
+  "subMetas": {},
+  "userData": {
+    "moduleId": "project:///assets/scripts/presentation/TravelScene.js",
+    "importerSettings": 7,
+    "simulateGlobals": []
+  }
+}
