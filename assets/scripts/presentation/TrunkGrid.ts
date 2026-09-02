@@ -64,6 +64,9 @@ export class TrunkGrid {
   private readonly cellNodes: Node[] = [];
   private trunk: TrunkState;
   private selectedItem: string | null = null;
+  /** 物品层：排在所有格子之后渲染，多格物品的色块/文字不会被后续格子背景盖住。 */
+  private itemLayer: Node | null = null;
+  private itemGraphics: Graphics | null = null;
 
   constructor(parent: Node, defs: readonly TrunkItemDef[], options: TrunkGridOptions = {}) {
     this.defs = defs;
@@ -120,6 +123,11 @@ export class TrunkGrid {
         this.cellNodes.push(cell);
       }
     }
+    // 物品层最后创建 → 同层最后渲染 → 物品色块始终盖住格子背景
+    this.itemLayer = new Node('ItemLayer');
+    this.itemLayer.setParent(this.root);
+    this.itemLayer.addComponent(UITransform).setContentSize(TRUNK_W, TRUNK_H);
+    this.itemGraphics = this.itemLayer.addComponent(Graphics);
   }
 
   private onCellClick(cell: Node): void {
@@ -172,59 +180,57 @@ export class TrunkGrid {
       if (g !== null) {
         this.paintCell(g, CELL_IDLE);
       }
-      const labelNode = cell.getChildByName('ItemLabel');
-      if (labelNode !== null) {
-        // destroy 是帧末延迟销毁；同帧 drawItem 会经 getChildByName 找回死节点复用，
-        // 帧末被销毁导致标签消失。先立即脱离节点树再销毁。
-        labelNode.removeFromParent();
-        labelNode.destroy();
-      }
     }
-    for (const item of this.trunk.items) {
-      this.drawItem(item);
-    }
+    this.redrawItems();
     this.refreshHighlight();
   }
 
-  private drawItem(item: PlacedItem): void {
-    const def = itemDef(this.defs, item.itemId);
-    const [w, h] = sizeToCell(def.size);
-    const cellNode = this.cellNodes[item.y * TRUNK_COLS + item.x] ?? null;
-    if (cellNode === null) {
-      return;
-    }
-    const g = cellNode.getComponent(Graphics);
+  /** 在物品层重绘全部已放置物品（物品层在格子之后渲染，不会被背景盖住）。 */
+  private redrawItems(): void {
+    const g = this.itemGraphics;
     if (g === null) {
       return;
     }
+    g.clear();
+    // 旧标签节点先立即脱离再销毁（destroy 帧末生效，同帧会残留）
+    for (const child of [...this.itemLayer!.children]) {
+      child.removeFromParent();
+      child.destroy();
+    }
+    // 物品层原点 = 网格左上角
+    this.itemLayer!.setPosition(GRID_LEFT, GRID_TOP, 0);
+    for (const item of this.trunk.items) {
+      this.drawItem(g, item);
+    }
+  }
+
+  private drawItem(g: Graphics, item: PlacedItem): void {
+    const def = itemDef(this.defs, item.itemId);
+    const [w, h] = sizeToCell(def.size);
     const width = CELL_SIZE * w + CELL_GAP * (w - 1);
     const height = CELL_SIZE * h + CELL_GAP * (h - 1);
+    // 锚点格左上角在物品层坐标系中的位置（层原点即网格左上角）
+    const px = item.x * (CELL_SIZE + CELL_GAP);
+    const py = -item.y * (CELL_SIZE + CELL_GAP);
     g.fillColor = ITEM_COLORS[def.id] ?? new Color(150, 150, 150, 255);
-    g.roundRect(-CELL_SIZE / 2, -CELL_SIZE / 2, width, height, 10);
+    g.roundRect(px, py - height, width, height, 10);
     g.fill();
     g.strokeColor = new Color(240, 228, 201, 255);
     g.lineWidth = 2;
-    g.rect(-CELL_SIZE / 2, -CELL_SIZE / 2, width, height);
+    g.rect(px, py - height, width, height);
     g.stroke();
-    // 物品标签放子节点（Graphics 与 Label 不能同节点）
-    let labelNode = cellNode.getChildByName('ItemLabel');
-    if (labelNode === null) {
-      labelNode = new Node('ItemLabel');
-      labelNode.setParent(cellNode);
-      labelNode.addComponent(UITransform).setContentSize(CELL_SIZE, CELL_SIZE);
-    }
-    let label = labelNode.getComponent(Label);
-    if (label === null) {
-      label = labelNode.addComponent(Label);
-    }
+    // 标签挂物品层子节点，居中于整个形状
+    const labelNode = new Node(`ItemLabel-${item.itemId}-${item.x}-${item.y}`);
+    labelNode.setParent(this.itemLayer!);
+    labelNode.addComponent(UITransform).setContentSize(width, height);
+    labelNode.setPosition(px + width / 2, py - height / 2, 0);
+    const label = labelNode.addComponent(Label);
     label.string = def.label;
     label.fontSize = 22;
     label.lineHeight = 26;
     label.color = new Color(250, 244, 226, 255);
     label.horizontalAlign = Label.HorizontalAlign.CENTER;
     label.verticalAlign = Label.VerticalAlign.CENTER;
-    // 多格物品标签居中于整个形状
-    labelNode.setPosition((w - 1) * (CELL_SIZE + CELL_GAP) / 2, -(h - 1) * (CELL_SIZE + CELL_GAP) / 2, 0);
   }
 
   private refreshHighlight(): void {
