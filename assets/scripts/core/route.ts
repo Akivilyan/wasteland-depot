@@ -58,6 +58,12 @@ export function routeHasNode(id: string): boolean {
   return DEPOT_ROUTE.some((n) => n.id === id);
 }
 
+/** 该节点距仓库的里程；不在路线上返回 null（仓库为 0）。 */
+export function locationKm(id: string): number | null {
+  const node = DEPOT_ROUTE.find((n) => n.id === id);
+  return node === undefined ? null : node.km;
+}
+
 export interface DepartResult {
   readonly state: TripState;
   /** 需要扣减的燃油；0 表示不能出发。 */

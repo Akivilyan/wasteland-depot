@@ -75,8 +75,11 @@ function weightedPick(weights: Map<LootItemId, number>, rng: Rng): LootItemId {
       return id;
     }
   }
-  // 浮点兜底：理论上到不了这里
-  const last = [...weights.keys()].pop();
+  // 浮点兜底：理论上到不了这里（不要对 Map.keys() 用展开语法，见 ADR-006）
+  let last: LootItemId | undefined;
+  weights.forEach((_w, id) => {
+    last = id;
+  });
   if (last === undefined) {
     throw new RangeError('weightedPick: empty pool');
   }

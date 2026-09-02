@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // 在微信开发者工具"小游戏运行时"上下文中执行 JS 表达式（CDP Runtime.evaluate）。
 // 用法: node tools/cdp-eval.mjs '<expression>'
-// 目标自动发现: /json/list 中 url 含 gamePage.html 且 title 为"小游戏运行时"的 webview。
+// 目标自动发现: url 含 gamePage.html（旧运行时）或 title 为"小游戏运行时"（新运行时）的 webview。
 import { setTimeout as delay } from 'node:timers/promises';
 
 const expr = process.argv[2];
@@ -11,7 +11,8 @@ if (!expr) {
 }
 
 const list = await (await fetch('http://127.0.0.1:9222/json/list')).json();
-const target = list.find((t) => t.type === 'webview' && t.url.includes('gamePage.html'));
+const target = list.find((t) => t.type === 'webview'
+  && (t.url.includes('gamePage.html') || t.title.includes('小游戏运行时')));
 if (!target) {
   console.error(JSON.stringify({ error: 'game target not found', targets: list.map((t) => t.url) }));
   process.exit(1);

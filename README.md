@@ -19,7 +19,7 @@ npm run wechat:preview # 生成真机预览二维码
 
 本机路径可用 `COCOS_CREATOR_BIN`、`WECHAT_DEVTOOLS_CLI` 覆盖。Cocos 命令行构建需要 macOS 图形会话；微信 CLI 需先在开发者工具「设置 → 安全设置 → 服务端口」打开开关。
 
-测试：`npm test`（node 原生 `--test`，直接 import `assets/scripts/core/*.ts`，当前 62 个用例全绿）。
+测试：`npm test`（node 原生 `--test`，直接 import `assets/scripts/core/*.ts`，当前 65 个用例全绿）。
 
 ## 目录结构
 
@@ -59,7 +59,8 @@ Agent 工作守则（命令、环境、回归方式）在 `.agents/skills/wastel
 | [SLICE_002](docs/SLICE_002_TRUNK_UI.md) | 4×3 货舱交互：候选物资区 + 占格/堆叠 + 点选放置 | ✅ 47 测试 + Web/微信构建 | ⏳ 待人工（微信端手感） |
 | [SLICE_003](docs/SLICE_003_MAP_SCROLL.md) | 地图骨架 + 横轴行车卷轴演出 | ✅ 54 测试 + 双端 + CDP 全链路 | ⏳ 待人工（手感） |
 | [SLICE_004](docs/SLICE_004_NODE_LOOT.md) | 抵达节点 → 候选物资 → 货舱取舍闭环 | ✅ 62 测试 + 双端 + CDP 全链路 | ⏳ 待人工（手感） |
+| [SLICE_005](docs/SLICE_005_GAME_LOOP.md) | 行程打通十日循环 GameState：扣油弹/入库/推进一天/危险度/结局重开 | ✅ 65 测试 + 双端 + 模拟器真实点击全链路 | ⏳ 待人工（手感） |
 
-下一切片：**SLICE_005** 把行程与十日循环 GameState 打通（出发扣真实油/弹药、抵仓入库、推进一天、危险度），替换 TravelScene 里的 `setFuel()` 注入。
+下一切片：**SLICE_006** 把道路事件（信息 → 选择 → 后果，`sim.choose` + game.ts 事件表）接进行车途中。
 
 > 人工验收方式见各切片文档「人工验收」节；微信端统一回归步骤见 [SLICE_002](docs/SLICE_002_TRUNK_UI.md) 的人工测试引导。

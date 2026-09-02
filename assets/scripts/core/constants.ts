@@ -33,7 +33,9 @@ export interface VehicleStats {
   range: number;
 }
 
-/** 车辆四项能力（载重/油耗/防护/探索距离），GAME_SKELETON 第 7 节。 */
+/** 车辆四项能力（载重/油耗/防护/探索距离），GAME_SKELETON 第 7 节。
+ *  注意：单次外出的实际油耗用 route.ts 的里程模型（legFuelCost，地图展示值）；
+ *  fuelCost 保留为车辆属性，供司机职业/车辆升级未来消费（PENDING_DECISIONS）。 */
 export const VEHICLE_DEFAULT: VehicleStats = {
   capacity: 12,
   fuelCost: 2,

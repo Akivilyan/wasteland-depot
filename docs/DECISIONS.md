@@ -43,3 +43,10 @@
 - 状态：已确认，用户反馈确立（2026-09-02）
 - **决定**：遇到环境/工具链类异常（非自己代码逻辑错误），先联网检索是否社区普遍现象、有无官方公告（WebFetch 超时国内站点时用 `arkcli +chat --tools web_search`），再决定跟官方方案还是自己兜底，不顺着调用栈埋头深挖。做兼容性对照实验时，用官方向导/官方模板新建项目，不手工拼 `project.config.json`（会被 GUI 覆盖模式字段）。
 - **理由**：ADR-002 的白屏问题正是靠「先查社区 + 官方模板对照」快速定位为运行时变更，而非逐行追 Cocos 启动链。
+
+## ADR-006：核心层禁用 Map/Set 展开语法 —— 微信构建会静默错译
+
+- 状态：已确认（2026-09-03，SLICE_005 回归实证）
+- **背景**：SLICE_005 微信模拟器回归发现「抵仓入库」把材料折算成 `undefined`（日志「带回 NaN 格物资」）。规则层 Node 测试全绿，只有构建产物行为错误。反编译 `build/wechatgame/assets/main/index.js` 实锤：Cocos 的 TS 降级编译把 `[...someMap]` 编成 `[].concat(someMap)`——`concat` 不展开 Map，得到 `[Map]` 而非条目数组；解构后字段全为 `undefined`。
+- **决定**：`assets/scripts` 内禁止对 Map/Set（及 `.keys()/.values()/.entries()` 迭代器）使用数组展开；遍历用 `forEach`，收集用普通循环 push。数组与对象字面量展开不受影响（编译为 `concat`/`_extends`，语义正确）。该约束由 `tools/verify-project.mjs` 静态护栏强制。
+- **教训**：规则层 Node 测试跑在真实 JS 引擎上，测不出构建错译——凡新增涉及 Map/Set 的规则实现，必须在微信模拟器里过一遍行为回归。

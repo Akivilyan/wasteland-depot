@@ -1,13 +1,16 @@
-// SLICE_003 表现层：地图骨架 + 行车卷轴演出。
+// SLICE_003/004/005 表现层：地图骨架 + 行车卷轴 + 节点拾取 + 十日循环打通。
 //
 // 与 PrototypeScene 同场景协作：本组件挂在独立节点上，负责
-// 地图选点（竖向骨架）与横轴行车演出；货舱 UI 由 PrototypeScene 负责。
-// 数据全部来自 core/route.ts，本层只演出、不改规则。
+// 地图选点（竖向骨架）、横轴行车演出、节点抵达面板与抵仓结算；
+// 货舱原型 UI 由 PrototypeScene 负责。数据全部来自 core（route/sim/loot），
+// 本层只演出、不改规则：出发扣费走 sim.startTrip，抵仓走 returnHome+advanceDay，
+// 十日 GameState（wasteland-depot.save.v1）由本场景持久化。
 
 import {
   _decorator,
   Color,
   Component,
+  director,
   Graphics,
   Label,
   Node,
@@ -31,7 +34,16 @@ import {
   decodeTripState,
 } from '../core/route.ts';
 import { LOCATIONS } from '../core/game.ts';
-import type { ResourceId, ResourceStock } from '../core/game.ts';
+import {
+  createInitialGameState,
+  startTrip,
+  returnHome,
+  cargoFromTrunk,
+  advanceDay,
+} from '../core/sim.ts';
+import type { GameState } from '../core/sim.ts';
+import { SAVE_KEY as GAME_SAVE_KEY, encodeGameState, decodeGameState } from '../core/scenario.ts';
+import { GAME_DAYS } from '../core/constants.ts';
 import type { LootState } from '../core/loot.ts';
 import {
   rollNodeLoot,
@@ -64,14 +76,6 @@ const DESIGN_HEIGHT = 1334;
 const SAVE_KEY = 'wasteland-depot.trip.v1';
 const LOOT_SAVE_KEY = 'wasteland-depot.loot.v1';
 const TRUNK_SAVE_KEY = 'wasteland-depot.trip-trunk.v1';
-/** 抵仓时每件货舱物品折算进据点库存的数量（amount 即件数）。 */
-const CARGO_TO_STOCK: Record<string, ResourceId> = {
-  food: 'food',
-  medicine: 'medicine',
-  fuel: 'fuel',
-  material: 'material',
-  ammo: 'ammo',
-};
 
 // —— 地图骨架几何 ——
 const MAP_TOP = 520;          // 最远节点 y
@@ -115,13 +119,14 @@ export class TravelScene extends Component {
   private trip: TripState = createTripState();
   private loot: LootState | null = null;
   private nodeTrunk: TrunkState = createTrunkState();
+  /** 十日循环权威状态（SLICE_005 起由本场景读写并持久化）。 */
+  private game: GameState = createInitialGameState();
 
   private mapRoot: Node | null = null;
   private driveRoot: Node | null = null;
   private statusLabel: Label | null = null;
   private selectedNode: string | null = null;
   private nodeVisuals: Map<string, { ring: Node; plate: Node }> = new Map();
-  private fuel = 12;
   private driveTween: Tween<Vec3> | null = null;
   private driveCtx: DriveContext | null = null;
   /** 节点面板（候选物资 + 货舱）运行期节点；返程时销毁。 */
@@ -129,29 +134,22 @@ export class TravelScene extends Component {
   private nodeGrid: TrunkGrid | null = null;
   private nodeLootCards: Map<string, Node> = new Map();
   private nodeStatus: Label | null = null;
-  /** 据点库存（SLICE_005 将替换为 sim.GameState）。 */
-  private stock: ResourceStock = {
-    fuel: 8, food: 8, material: 4, medicine: 3, ammo: 6,
-  };
 
   start(): void {
     this.node.getComponent(UITransform)?.setContentSize(DESIGN_WIDTH, DESIGN_HEIGHT);
     this.trip = decodeTripState(this.storage.get(SAVE_KEY));
     this.loot = decodeLootState(this.storage.get(LOOT_SAVE_KEY));
     this.nodeTrunk = decodeTrunkState(this.storage.get(TRUNK_SAVE_KEY));
+    this.game = decodeGameState(this.storage.get(GAME_SAVE_KEY)) ?? createInitialGameState();
     this.buildDriveLayer();
     this.buildMap();
     this.refreshStatus();
     // 恢复到 atNode 相位时重建节点面板
     if (this.trip.phase === 'atNode' && this.trip.destination !== null) {
       this.showNodeArrival(this.tripDestinationLabel(this.trip.destination));
+    } else if (this.game.ending !== null) {
+      this.showEndingPanel();
     }
-  }
-
-  /** 由 PrototypeScene/外部同步当前燃油（出发合法性用）。 */
-  setFuel(value: number): void {
-    this.fuel = Math.max(0, Math.floor(value));
-    this.refreshStatus();
   }
 
   /** 当前行程态（供外部读取）。 */
@@ -159,9 +157,9 @@ export class TravelScene extends Component {
     return this.trip;
   }
 
-  /** 据点库存快照（SLICE_005 接 GameState 前的临时读取口）。 */
-  get stockSnapshot(): ResourceStock {
-    return { ...this.stock };
+  /** 十日循环状态快照（存档/结算后的权威值，供调试与回归读取）。 */
+  get gameState(): GameState {
+    return this.game;
   }
 
   // —— 地图骨架 ——
@@ -186,7 +184,7 @@ export class TravelScene extends Component {
     bg.on(Node.EventType.TOUCH_START, swallow);
     bg.on(Node.EventType.TOUCH_MOVE, swallow);
 
-    this.createLabel(root, 'MapTitle', '路线图 · 选择目的地', 0, 620, 36, COLOR_TEXT);
+    this.createLabel(root, 'MapTitle', '', 0, 620, 36, COLOR_TEXT);
     this.statusLabel = this.createLabel(root, 'MapStatus', '', 0, STATUS_Y, 22, COLOR_DIM);
     this.createButton(root, 'BackDepot', '返回', 300, BTN_Y, () => this.finishTripVisualOnly());
 
@@ -263,7 +261,7 @@ export class TravelScene extends Component {
   }
 
   private onNodeTapped(id: string): void {
-    if (this.trip.phase !== 'map') return;
+    if (this.trip.phase !== 'map' || this.game.ending !== null) return;
     this.selectedNode = id;
     this.refreshStatus();
     this.refreshRings();
@@ -287,15 +285,20 @@ export class TravelScene extends Component {
   }
 
   private refreshStatus(): void {
+    // 标题带十日进度
+    const title = this.mapRoot?.getChildByName('MapTitle')?.getComponent(Label);
+    if (title !== undefined && title !== null) {
+      title.string = `路线图 · 第 ${this.game.day}/${GAME_DAYS} 天`;
+    }
     if (this.statusLabel === null) return;
     const dest = this.selectedNode === null ? null : DEPOT_ROUTE.find((n) => n.id === this.selectedNode);
     if (this.trip.phase === 'map' && dest !== undefined && dest !== null && dest.id !== 'depot') {
       const cost = legFuelCost(dest.km);
-      this.statusLabel.string = this.fuel >= cost
+      this.statusLabel.string = this.game.stock.fuel >= cost
         ? `已选 ${this.tripDestinationLabel(dest.id)}（${dest.km}km，油 ${cost}）· 点「出发」`
-        : `燃油不足：需 ${cost}，现有 ${this.fuel}`;
+        : `燃油不足：需 ${cost}，现有 ${this.game.stock.fuel}`;
     } else {
-      this.statusLabel.string = `油量 ${this.fuel} · 点选目的地出发`;
+      this.statusLabel.string = `油 ${this.game.stock.fuel} · 弹 ${this.game.stock.ammo} · 食 ${this.game.stock.food} · 危险度 ${this.game.danger} · 点选目的地出发`;
     }
     this.refreshGoButton();
   }
@@ -321,14 +324,27 @@ export class TravelScene extends Component {
 
   private onGo(): void {
     if (this.trip.phase !== 'map' || this.selectedNode === null || this.selectedNode === 'depot') return;
-    const result = depart(this.trip, this.selectedNode as never, this.fuel);
+    if (this.game.ending !== null) return;
+    const destination = this.selectedNode;
+    const fuelBefore = this.game.stock.fuel;
+    // 出发扣费在规则层一次裁决：里程油耗 + 弹药，失败提示并停留在地图
+    const pay = startTrip(this.game, destination as never);
+    if (pay.state === this.game) {
+      if (this.statusLabel !== null) {
+        this.statusLabel.string = pay.message;
+      }
+      return;
+    }
+    this.game = pay.state;
+    this.persistGame();
+    // 行程相位机沿用同一油耗模型（用扣费前油量校验，此处必然通过）
+    const result = depart(this.trip, destination as never, fuelBefore);
     if (result.fuelCost === 0) {
       if (this.statusLabel !== null && result.reason !== null) {
         this.statusLabel.string = result.reason;
       }
       return;
     }
-    this.fuel -= result.fuelCost;
     this.trip = result.state;
     this.selectedNode = null;
     this.refreshRings();
@@ -643,53 +659,97 @@ export class TravelScene extends Component {
     this.trip = departReturn(this.trip);
     this.persistTrip();
     this.startDrive({ destLabel, returning: true, onArrive: () => {
-      this.settleCargoToStock();
-      // 结算会把带回来的油折进库存；表现层油量表直接吃库存快照（SLICE_005 接 GameState）
-      this.fuel = this.stock.fuel;
-      this.trip = backToMap(this.trip);
-      this.loot = null;
-      this.nodeTrunk = createTrunkState();
-      this.storage.remove(LOOT_SAVE_KEY);
-      this.storage.remove(TRUNK_SAVE_KEY);
-      this.persistTrip();
-      this.refreshStatus();
+      this.settleReturn();
     } });
   }
 
-  /** 抵仓结算：货舱物品按映射折算进据点库存（SLICE_005 换成 returnHome）。 */
-  private settleCargoToStock(): void {
-    let stock: ResourceStock = { ...this.stock };
-    for (const item of this.nodeTrunk.items) {
-      const resourceId = CARGO_TO_STOCK[item.itemId];
-      if (resourceId === undefined) continue;
-      stock = { ...stock, [resourceId]: stock[resourceId] + item.amount };
-    }
-    this.stock = stock;
-    // 结算即落袋，行程货舱清空
+  /** 抵仓结算：货舱入库 → 推进一天（危险度/食物/结局）→ 回地图待发。 */
+  private settleReturn(): void {
+    const cargo = cargoFromTrunk(this.nodeTrunk, DEFAULT_ITEM_DEFS);
+    this.game = returnHome(this.game, cargo).state;
     this.nodeTrunk = createTrunkState();
     this.storage.remove(TRUNK_SAVE_KEY);
+    const advanced = advanceDay(this.game);
+    this.game = advanced.state;
+    this.persistGame();
+    this.trip = backToMap(this.trip);
+    this.loot = null;
+    this.storage.remove(LOOT_SAVE_KEY);
+    this.persistTrip();
+    if (this.game.ending !== null) {
+      this.showEndingPanel();
+    } else {
+      if (this.statusLabel !== null) {
+        this.statusLabel.string = advanced.message;
+      }
+      this.refreshStatus();
+    }
   }
 
   private finishTripVisualOnly(): void {
-    // 「返回」：放弃当前行程（仅演出态回地图；燃油不退——决策在规则层）
+    // 「返回」：中止当前行程立即返仓——油弹不退、货舱照常入库、照常推进一天。
     if (this.trip.phase === 'map') return;
     this.closeNodePanel();
-    this.trip = backToMap(this.trip);
-    this.loot = null;
-    this.nodeTrunk = createTrunkState();
-    this.storage.remove(LOOT_SAVE_KEY);
-    this.storage.remove(TRUNK_SAVE_KEY);
-    this.persistTrip();
+    // 先清演出回调，避免 finishDrive 触发 onArrive 造成二次结算
+    this.driveCtx = null;
+    this.settleReturn();
     if (this.driveRoot !== null) {
       this.finishDrive();
     }
-    this.refreshStatus();
+  }
+
+  // —— 结局面板（D1/D6 默认值：存活到第 10 天）——
+
+  private showEndingPanel(): void {
+    if (this.mapRoot === null) return;
+    this.mapRoot.getChildByName('EndingPanel')?.destroy();
+    const panel = new Node('EndingPanel');
+    panel.setParent(this.node);
+    panel.addComponent(UITransform).setContentSize(700, 900);
+    panel.setPosition(0, 0, 0);
+    const g = panel.addComponent(Graphics);
+    g.fillColor = new Color(48, 44, 38, 255);
+    g.roundRect(-350, -450, 700, 900, 16);
+    g.fill();
+    for (const evt of [Node.EventType.TOUCH_START, Node.EventType.TOUCH_MOVE, Node.EventType.TOUCH_END]) {
+      panel.on(evt, (): void => undefined);
+    }
+
+    const stock = this.game.stock;
+    this.createLabel(panel, 'EndingTitle', '结局 · 你活下来了', 0, 340, 40, COLOR_TEXT);
+    this.createLabel(
+      panel,
+      'EndingStats',
+      `存活到第 ${GAME_DAYS} 天\n危险度 ${this.game.danger}\n`
+        + `燃油 ${stock.fuel} · 食物 ${stock.food} · 材料 ${stock.material}\n`
+        + `药品 ${stock.medicine} · 弹药 ${stock.ammo}`,
+      0,
+      80,
+      26,
+      COLOR_TEXT,
+    );
+    this.createLabel(panel, 'EndingNote', '最终目标与多结局待拍板（PENDING_DECISIONS D1/D6）', 0, -120, 18, COLOR_DIM);
+    this.createButton(panel, 'RestartBtn', '重新开始', 0, -300, () => this.restartGame());
+  }
+
+  /** 清空全部本地存档并重载场景，开新的一局。 */
+  private restartGame(): void {
+    this.storage.remove(GAME_SAVE_KEY);
+    this.storage.remove(SAVE_KEY);
+    this.storage.remove(LOOT_SAVE_KEY);
+    this.storage.remove(TRUNK_SAVE_KEY);
+    const sceneName = director.getScene()?.name ?? 'Prototype';
+    director.loadScene(sceneName);
   }
 
   // —— 公共 ——
 
   private persistTrip(): void {
     this.storage.set(SAVE_KEY, encodeTripState(this.trip));
+  }
+
+  private persistGame(): void {
+    this.storage.set(GAME_SAVE_KEY, encodeGameState(this.game));
   }
 
   private persistLoot(): void {

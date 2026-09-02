@@ -20,6 +20,8 @@ import {
   applyOutcome,
   LOCATIONS,
 } from './game.ts';
+import { locationKm, legFuelCost } from './route.ts';
+import type { TrunkState, TrunkItemDef } from './trunk.ts';
 import type {
   VehicleStats,
 } from './constants.ts';
@@ -108,17 +110,24 @@ function findLocation(id: LocationId): LocationDef {
 }
 
 // —— 阶段：出发（startTrip）——
+//
+// 油耗用 route.ts 的里程模型（legFuelCost，地图节点牌上展示的就是它）；
+// vehicle.fuelCost 保留为车辆属性，供司机职业/车辆升级未来消费。
 
 export function startTrip(state: GameState, location: LocationId): ActionResult {
-  const def = findLocation(location);
-  const fuelCost = state.vehicle.fuelCost;
+  const km = locationKm(location);
+  if (km === null) {
+    return { state, message: '目的地不在路线图上。' };
+  }
+  const fuelCost = legFuelCost(km);
   if (state.stock.fuel < fuelCost) {
-    return { state, message: '燃油不足，无法出发。' };
+    return { state, message: `燃油不足：前往该地需要 ${fuelCost} 燃油。` };
   }
   if (state.stock.ammo < TRIP_AMMO_COST) {
-    return { state, message: '弹药不足，无法出发。' };
+    return { state, message: `弹药不足：出发需要 ${TRIP_AMMO_COST} 弹药。` };
   }
 
+  const def = findLocation(location);
   const next: GameState = {
     ...state,
     stock: {
@@ -178,19 +187,39 @@ export function loadCargo(state: GameState, cargo: readonly CargoLoad[]): Action
 // —— 阶段：回仓库（returnHome）——
 //
 // 把本次外出的物资加入仓库、结算车辆损伤、消耗食物维持。
-// 这是"本次外出收益落袋"的时点。
+// 这是"本次外出收益落袋"的时点。载重合法性不在这里复查：
+// 货舱流程的占格上限由 trunk 放置保证，抽象流程由 loadCargo 校验。
 
 export function returnHome(state: GameState, cargo: readonly CargoLoad[]): ActionResult {
-  const total = cargo.reduce((sum, c) => sum + c.amount, 0);
-  if (total > state.vehicle.capacity) {
-    return { state, message: '载重超限，无法回程。' };
-  }
   let stock: ResourceStock = { ...state.stock };
+  let total = 0;
   for (const c of cargo) {
+    total += c.amount;
     stock = { ...stock, [c.resource]: stock[c.resource] + c.amount };
   }
   const log = [...state.log, `返回仓库，带回 ${total} 格物资。`];
   return { state: { ...state, stock, log }, message: `返回仓库，带回 ${total} 格物资。` };
+}
+
+/**
+ * 货舱物品 → 入库清单：按物品定义的 resource 折算，同资源合并数量。
+ * 供表现层在抵仓时把 TrunkState 交给 returnHome。
+ */
+export function cargoFromTrunk(
+  trunk: TrunkState,
+  defs: readonly TrunkItemDef[],
+): CargoLoad[] {
+  const totals = new Map<ResourceId, number>();
+  for (const item of trunk.items) {
+    const def = defs.find((d) => d.id === item.itemId);
+    if (def === undefined) continue;
+    totals.set(def.resource, (totals.get(def.resource) ?? 0) + item.amount);
+  }
+  // 注意：不要对 Map 用展开语法（[...map]）。Cocos 微信构建会把它降级成
+  // [].concat(map)，得到 [Map] 而非条目数组（DECISIONS ADR-006），这里用 forEach。
+  const cargo: CargoLoad[] = [];
+  totals.forEach((amount, resource) => cargo.push({ resource, amount }));
+  return cargo;
 }
 
 // —— 阶段：推进一天（advanceDay）——
@@ -252,9 +281,14 @@ export function runSimulation(state: GameState, rng: Rng, config: GameConfig): G
 
 // —— 辅助 ——
 
+/** 能否出发：地点在路线上、燃油（里程模型）与弹药足够、风险在车辆探索距离内。 */
 export function canAffordTrip(state: GameState, location: LocationId): boolean {
+  const km = locationKm(location);
+  if (km === null) {
+    return false;
+  }
   const def = findLocation(location);
-  return state.stock.fuel >= state.vehicle.fuelCost
+  return state.stock.fuel >= legFuelCost(km)
     && state.stock.ammo >= TRIP_AMMO_COST
     && def.risk <= state.vehicle.range;
 }
