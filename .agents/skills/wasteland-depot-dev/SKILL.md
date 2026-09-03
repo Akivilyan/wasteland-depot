@@ -21,6 +21,8 @@ The authoritative, current definition of the layering, per-file responsibilities
 
 Run `npm run doctor` before diagnosing environment failures. Run `npm run verify` after code or configuration changes. Use `npm run build:web` or `npm run build:wechat` instead of reconstructing Cocos command lines manually.
 
+`npm run verify` includes `npm run typecheck` (`tsc -p tsconfig.check.json`), the CLI type gate against Cocos engine declarations — the editor compiles on open, but CLI builds/regression do not, so without this gate mistyped engine APIs (`Node.scheduleOnce` doesn't exist; `canPlace(state,def,x,y)` arity; `EventTouch.preventSwallow` is a boolean) survive into the simulator. Do not guess Cocos APIs: check `.d.ts` under the CocosCreator app bundle (`.../engine/bin/.declarations/cc.d.ts`) or the manual, then let typecheck confirm. tsc checks types, not behavior — WeChat build miscompiles (ADR-006, Map spread) still need simulator regression.
+
 Cocos Creator's command-line build still needs a macOS graphical session. If a build exits before producing a Cocos log, distinguish a missing GUI session or sandbox restriction from a project defect.
 
 After a WeChat build, use `npm run wechat:open` for the simulator and `npm run wechat:preview` for a device QR code. Never upload a release unless the user explicitly authorizes the external action.

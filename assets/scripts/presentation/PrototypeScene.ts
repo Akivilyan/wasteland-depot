@@ -40,7 +40,7 @@ export class PrototypeScene extends Component {
   private statusLabel: Label | null = null;
   private capacityLabel: Label | null = null;
 
-  start(): void {
+  override start(): void {
     view.setDesignResolutionSize(DESIGN_WIDTH, DESIGN_HEIGHT, ResolutionPolicy.FIXED_WIDTH);
     this.node.getComponent(UITransform)?.setContentSize(DESIGN_WIDTH, DESIGN_HEIGHT);
     this.trunk = decodeTrunkState(this.storage.get(SAVE_KEY));

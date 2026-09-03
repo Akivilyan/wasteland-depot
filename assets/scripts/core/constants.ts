@@ -46,6 +46,10 @@ export const VEHICLE_DEFAULT: VehicleStats = {
 /** 每次外出固定的弹药消耗基数。 */
 export const TRIP_AMMO_COST = 1;
 
+/** 去程途中遇到道路事件的概率（0..1）。事件密度与清单属 D8 未拍板，默认值。
+ *  当前每趟至多一个事件、返程不抽。 */
+export const ROAD_EVENT_CHANCE = 0.8;
+
 /** 事件导致的危险等级增长步长。 */
 export const DANGER_STEP = 1;
 export const MAX_DANGER = 10;

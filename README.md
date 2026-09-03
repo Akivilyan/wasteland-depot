@@ -10,16 +10,17 @@
 
 ```bash
 npm run doctor         # 环境体检（先跑这个排查环境问题）
-npm run verify         # 体检 + 全部规则测试 + 边界/引擎模块静态校验
+npm run typecheck      # 全项目 TypeScript 类型检查（对引擎声明，tsconfig.check.json）
+npm run verify         # 体检 + 类型检查 + 全部规则测试 + 边界/引擎模块静态校验
 npm run build:web      # 构建 Web Mobile
 npm run build:wechat   # 构建微信小游戏（构建后自动打兼容补丁）
 npm run wechat:open    # 在微信开发者工具中打开
 npm run wechat:preview # 生成真机预览二维码
 ```
 
-本机路径可用 `COCOS_CREATOR_BIN`、`WECHAT_DEVTOOLS_CLI` 覆盖。Cocos 命令行构建需要 macOS 图形会话；微信 CLI 需先在开发者工具「设置 → 安全设置 → 服务端口」打开开关。
+本机路径可用 `COCOS_CREATOR_BIN`、`WECHAT_DEVTOOLS_CLI` 覆盖。Cocos 命令行构建需要 macOS 图形会话；微信 CLI 需先在开发者工具「设置 → 安全设置 → 服务端口」打开开关。类型检查依赖 Cocos 编辑器生成的 `temp/declarations`（编辑器打开过项目一次即可；未生成时 typecheck 自动跳过）。
 
-测试：`npm test`（node 原生 `--test`，直接 import `assets/scripts/core/*.ts`，当前 65 个用例全绿）。
+测试：`npm test`（node 原生 `--test`，直接 import `assets/scripts/core/*.ts`，当前 71 个用例全绿）。
 
 ## 目录结构
 
@@ -60,7 +61,8 @@ Agent 工作守则（命令、环境、回归方式）在 `.agents/skills/wastel
 | [SLICE_003](docs/SLICE_003_MAP_SCROLL.md) | 地图骨架 + 横轴行车卷轴演出 | ✅ 54 测试 + 双端 + CDP 全链路 | ⏳ 待人工（手感） |
 | [SLICE_004](docs/SLICE_004_NODE_LOOT.md) | 抵达节点 → 候选物资 → 货舱取舍闭环 | ✅ 62 测试 + 双端 + CDP 全链路 | ⏳ 待人工（手感） |
 | [SLICE_005](docs/SLICE_005_GAME_LOOP.md) | 行程打通十日循环 GameState：扣油弹/入库/推进一天/危险度/结局重开 | ✅ 65 测试 + 双端 + 模拟器真实点击全链路 | ⏳ 待人工（手感） |
+| [SLICE_006](docs/SLICE_006_ROAD_EVENTS.md) | 道路事件接入行车途中：卷轴暂停 → 事件面板 → 选择后果落 GameState → 恢复；首次接入命令行类型检查（ADR-007） | ✅ 71 测试 + 类型检查 + 双端 + 模拟器真实点击两趟事件 | ⏳ 待人工（手感） |
 
-下一切片：**SLICE_006** 把道路事件（信息 → 选择 → 后果，`sim.choose` + game.ts 事件表）接进行车途中。
+核心循环（地图选点 → 路途事件 → 节点拾取装舱 → 抵仓结算推进一天 → 存活结局）已全部打通。下一切片候选：事件池扩充与清单拍板（D8）、危险度实际效果（D5）、或职业/幸存者系统。
 
 > 人工验收方式见各切片文档「人工验收」节；微信端统一回归步骤见 [SLICE_002](docs/SLICE_002_TRUNK_UI.md) 的人工测试引导。

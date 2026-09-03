@@ -10,6 +10,7 @@
 import type { Rng } from './rng.ts';
 import type {
   GameConfig,
+  GameEvent,
   ResourceStock,
   ResourceId,
   LocationId,
@@ -33,6 +34,7 @@ import {
   FACILITY_LEVELS,
   VEHICLE_DEFAULT,
   TRIP_AMMO_COST,
+  ROAD_EVENT_CHANCE,
   DANGER_STEP,
   MAX_DANGER,
   DANGER_GROWTH_PER_DAY,
@@ -140,13 +142,27 @@ export function startTrip(state: GameState, location: LocationId): ActionResult 
   return { state: next, message: `出发前往 ${def.label}。` };
 }
 
-// —— 阶段：道路事件（choose）——
+// —— 阶段：道路事件（drawRoadEvent + resolveEvent）——
 //
-// 出发后玩家按序遇到事件，用 choose 选一项。choose 不会改变 day，
-// 只是推进本次外出的子步骤。防护（车辆保护）可降低 damage 后果。
+// 行车途中由表现层先 drawRoadEvent 抽取（可能为 null=本趟无事），展示面板
+// 等玩家选择，再 resolveEvent 结算。命令不改变 day，只推进本次外出的子步骤。
+// 防护（车辆保护）可降低 damage 后果。
 
-export function choose(state: GameState, choiceIndex: number, rng: Rng, config: GameConfig): ActionResult {
-  const event = pickEvent(rng, config);
+/** 行车途中抽一个道路事件；按 ROAD_EVENT_CHANCE 概率返回 null（本趟无事件）。 */
+export function drawRoadEvent(rng: Rng, config: GameConfig): GameEvent | null {
+  if (!rng.chance(ROAD_EVENT_CHANCE)) {
+    return null;
+  }
+  return pickEvent(rng, config);
+}
+
+/** 结算指定事件的指定选项。choiceIndex 越界/缺后果时原样返回并附原因。 */
+export function resolveEvent(
+  state: GameState,
+  event: GameEvent,
+  choiceIndex: number,
+  config: GameConfig,
+): ActionResult {
   const choice = event.choices[choiceIndex];
   if (choice === undefined) {
     return { state, message: `无效选择：${choiceIndex}` };
@@ -162,9 +178,15 @@ export function choose(state: GameState, choiceIndex: number, rng: Rng, config: 
   }
 
   const { stock, message } = applyOutcome(state.stock, appliedOutcome, config);
+  // reveal 后果：把揭示的地点加入已探索集合（applyOutcome 只产出文案）
+  let explored = state.explored;
+  if (appliedOutcome.type === 'reveal' && !state.explored.includes(appliedOutcome.location)) {
+    explored = [...state.explored, appliedOutcome.location];
+  }
   const next: GameState = {
     ...state,
     stock,
+    explored,
     log: [...state.log, `事件「${event.title}」→ ${message}`],
   };
   return { state: next, message: `事件「${event.title}」→ ${message}` };
@@ -271,7 +293,10 @@ export function runSimulation(state: GameState, rng: Rng, config: GameConfig): G
       continue;
     }
     current = start.state;
-    current = choose(current, 0, rng, config).state;
+    const event = drawRoadEvent(rng, config);
+    if (event !== null) {
+      current = resolveEvent(current, event, 0, config).state;
+    }
     const cargo: CargoLoad[] = [{ resource: 'food', amount: 2 }];
     current = returnHome(current, cargo).state;
     current = advanceDay(current).state;

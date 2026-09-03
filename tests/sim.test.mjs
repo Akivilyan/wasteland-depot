@@ -4,7 +4,8 @@ import test from 'node:test';
 import {
   createInitialGameState,
   startTrip,
-  choose,
+  drawRoadEvent,
+  resolveEvent,
   loadCargo,
   returnHome,
   cargoFromTrunk,
@@ -48,17 +49,86 @@ test('startTrip refuses when fuel or ammo is insufficient', () => {
   assert.match(startTrip(noAmmo, 'suburb').message, /弹药不足/);
 });
 
-test('choose resolves an event and applies its outcome', () => {
-  const state = { ...createInitialGameState(), stock: { ...STARTING_RESOURCES, food: 10 } };
+test('drawRoadEvent is deterministic per seed and returns null or a table event', () => {
   const config = createGameConfig();
-  const rng = createRng(1);
+  const a = drawRoadEvent(createRng(7), config);
+  const b = drawRoadEvent(createRng(7), config);
+  assert.equal(a?.id ?? null, b?.id ?? null, '同种子必须抽出同一结果（含 null）');
+  if (a !== null) {
+    assert.ok(config.eventTable.some((e) => e.id === a.id), '抽中事件必须来自事件表');
+  }
+  // 概率闸门：存在让事件落空的种子（无事件趟次存在）
+  const draws = Array.from({ length: 40 }, (_, i) => drawRoadEvent(createRng(i + 100), config));
+  assert.ok(draws.some((e) => e === null), 'ROAD_EVENT_CHANCE<1 时应当出现无事件趟次');
+});
+
+test('resolveEvent applies gain outcome, logs it, and never advances the day', () => {
+  const state = createInitialGameState();
+  const config = createGameConfig();
+  const event = config.eventTable.find((e) => e.id === 'supply_cache');
+  assert.ok(event);
   const before = state.stock.food;
-  const { state: after, message } = choose(state, 0, rng, config);
-  assert.match(message, /事件/);
-  assert.ok(after.day === 1, 'choose must not advance the day');
-  // 无论哪个事件，choose 都不该让食物凭空变成负数
-  assert.ok(after.stock.food >= 0);
-  assert.ok(before !== undefined);
+  const { state: after, message } = resolveEvent(state, event, 0, config); // 搜刮 → 食物+3
+  assert.equal(after.stock.food, before + 3);
+  assert.equal(after.day, 1, 'resolveEvent must not advance the day');
+  assert.match(message, /事件「补给点」/);
+  assert.match(after.log.at(-1) ?? '', /补给点/);
+});
+
+test('resolveEvent clamps losses at zero (no negative stock)', () => {
+  const state = { ...createInitialGameState(), stock: { ...STARTING_RESOURCES, ammo: 0 } };
+  const config = createGameConfig();
+  const event = config.eventTable.find((e) => e.id === 'roadblock');
+  assert.ok(event);
+  const { state: after, message } = resolveEvent(state, event, 1, config); // 强闯 → 弹药-2
+  assert.equal(after.stock.ammo, 0, '库存不足时损失应截断到 0');
+  assert.match(message, /失去 0/);
+});
+
+test('resolveEvent reveal outcome adds the location to explored', () => {
+  const state = createInitialGameState();
+  const config = createGameConfig();
+  const event = config.eventTable.find((e) => e.id === 'radar_contact');
+  assert.ok(event);
+  assert.ok(!state.explored.includes('hospital'));
+  const { state: after } = resolveEvent(state, event, 0, config); // 追踪 → 揭示医院
+  assert.ok(after.explored.includes('hospital'));
+});
+
+test('resolveEvent vehicle protection reduces damage outcome', () => {
+  const state = { ...createInitialGameState(), vehicle: { ...createInitialGameState().vehicle, protection: 2 } };
+  const config = createGameConfig();
+  // 当前事件表无 damage 条目，构造合成事件验证防护减免分支
+  const damageEvent = {
+    id: 'synthetic_hit', kind: 'hazard', title: '撞击',
+    choices: ['硬扛'], outcomes: [{ type: 'damage', amount: 5 }],
+    protectionSensitive: true,
+  };
+  const { message } = resolveEvent(state, damageEvent, 0, config);
+  assert.match(message, /车辆受损 3/, '防护 2 点应把 5 点伤害减到 3');
+});
+
+test('resolveEvent rejects invalid choice without mutating state', () => {
+  const state = createInitialGameState();
+  const config = createGameConfig();
+  const event = config.eventTable.find((e) => e.id === 'roadblock');
+  assert.ok(event);
+  const { state: after, message } = resolveEvent(state, event, 9, config);
+  assert.equal(after, state, '无效选择必须原样返回同一状态');
+  assert.match(message, /无效选择/);
+});
+
+test('resolving every event with empty stock never yields negative resources', () => {
+  const config = createGameConfig();
+  for (const event of config.eventTable) {
+    const state = { ...createInitialGameState(), stock: { fuel: 0, food: 0, material: 0, medicine: 0, ammo: 0 } };
+    for (let i = 0; i < event.choices.length; i++) {
+      const { state: after } = resolveEvent(state, event, i, config);
+      for (const value of Object.values(after.stock)) {
+        assert.ok(value >= 0, `${event.id} 选项${i} 导致负库存`);
+      }
+    }
+  }
 });
 
 test('loadCargo rejects cargo exceeding capacity', () => {

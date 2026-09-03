@@ -8,7 +8,7 @@
 // 规则全部来自 core/trunk.ts，本组件不持有存档、不决定「装完之后」的事，
 // 通过 onChange 回调把新的 TrunkState 交回宿主。
 
-import { Color, Graphics, Label, Node, UITransform } from 'cc';
+import { Color, Graphics, Label, Node, UITransform, tween } from 'cc';
 import {
   TrunkState,
   PlacedItem,
@@ -141,7 +141,7 @@ export class TrunkGrid {
     // 空手点击已放置物品 → 整组移除（取回交互）
     if (this.selectedItem === null && this.options.removeOnTap === true) {
       const occupant = this.trunk.grid[idx];
-      if (occupant !== null) {
+      if (occupant !== null && occupant !== undefined) {
         const removed = removeItem(this.trunk, occupant);
         this.trunk = removed.state;
         this.options.onItemRemoved?.(occupant, removed.removed);
@@ -247,7 +247,12 @@ export class TrunkGrid {
       if (this.trunk.grid[idx] !== null) {
         continue;
       }
-      const on = this.selectedItem !== null && canPlace(this.trunk, this.defs, this.selectedItem, x, y);
+      // core canPlace 签名是 (state, def, x, y)：必须先把 itemId 解析成定义。
+      let on = false;
+      if (this.selectedItem !== null) {
+        const def = itemDef(this.defs, this.selectedItem);
+        on = canPlace(this.trunk, def, x, y);
+      }
       this.paintCell(g, on ? HIGHLIGHT : CELL_IDLE);
     }
   }
@@ -258,11 +263,12 @@ export class TrunkGrid {
       return;
     }
     this.paintCell(g, ERROR_FLASH);
-    // 短暂展示错误色后恢复网格绘制
-    const schedule = cell.scheduleOnce.bind(cell);
-    schedule(() => {
-      this.refreshAll();
-    }, 0.3);
+    // 短暂展示错误色后恢复网格绘制。TrunkGrid 是普通类不是 Component，
+    // 没有 scheduleOnce；用 tween 挂在格子节点上延时回调（DECISIONS ADR-007）。
+    tween(cell)
+      .delay(0.3)
+      .call(() => this.refreshAll())
+      .start();
   }
 }
 

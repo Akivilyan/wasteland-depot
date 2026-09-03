@@ -50,3 +50,11 @@
 - **背景**：SLICE_005 微信模拟器回归发现「抵仓入库」把材料折算成 `undefined`（日志「带回 NaN 格物资」）。规则层 Node 测试全绿，只有构建产物行为错误。反编译 `build/wechatgame/assets/main/index.js` 实锤：Cocos 的 TS 降级编译把 `[...someMap]` 编成 `[].concat(someMap)`——`concat` 不展开 Map，得到 `[Map]` 而非条目数组；解构后字段全为 `undefined`。
 - **决定**：`assets/scripts` 内禁止对 Map/Set（及 `.keys()/.values()/.entries()` 迭代器）使用数组展开；遍历用 `forEach`，收集用普通循环 push。数组与对象字面量展开不受影响（编译为 `concat`/`_extends`，语义正确）。该约束由 `tools/verify-project.mjs` 静态护栏强制。
 - **教训**：规则层 Node 测试跑在真实 JS 引擎上，测不出构建错译——凡新增涉及 Map/Set 的规则实现，必须在微信模拟器里过一遍行为回归。
+
+## ADR-007：命令行类型检查是验证链必经一环 —— 编辑器编译不构成 tsc 闸门
+
+- 状态：已确认（2026-09-03，SLICE_006 复盘实证）
+- **背景**：连续数个「用错 Cocos API」的 bug（`EventTouch.preventSwallow` 是布尔属性却当方法调用、`Node.scheduleOnce` 不存在——它是 `Component` 的方法、`canPlace(state,def,x,y)` 被传成 5 参数导致合法格高亮从未生效、`Node.setActive`/`Label.let()` 凭印象使用）都有同一特征：**凭印象写引擎 API，且命令行验证链里没有类型检查**。Cocos 编辑器内部会按 `temp/tsconfig.cocos.json` 全量编译，但只有编辑器打开项目时才发生；CLI 构建/回归不经过它，而根 `tsconfig.json` 的 `files` 只含微信类型声明、不含业务代码——直接 `tsc` 根本不检查 `assets/scripts`。这些错误因此一路活到模拟器，有的还被触摸回调静默吞掉（高亮 bug 存在了两个切片未被发现）。
+- **决定**：新增 `tsconfig.check.json`（include 业务代码、target/lib ES2020、对引擎 `.d.ts` 全量检查）与 `tools/typecheck.sh`（`temp/declarations` 未生成时跳过），接入 `npm run verify`：doctor → **typecheck** → node 测试 → 静态护栏。
+- **理由**：类型错误在本机秒级报出，成本远低于模拟器回归；引擎 API 表面大、记忆不可靠，tsc 对着官方声明做校验正是「先查手册」原则（ADR-004/ADR-005）的自动化版本。SLICE_006 首次接入即报出 15 处问题，含 2 个潜伏运行时 bug（canPlace 参数、scheduleOnce）。
+- **注意**：tsc 只查类型不查行为，微信构建错译（ADR-006）类问题仍需模拟器行为回归；两道闸门互补。

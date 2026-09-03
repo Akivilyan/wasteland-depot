@@ -1,0 +1,32 @@
+{
+  // CLI 专用类型检查配置（Cocos 编辑器自身按 temp/tsconfig.cocos.json 全量编译，
+  // 但命令行没有「编辑器打开」这一步；根 tsconfig.json 的 files 只含微信类型声明，
+  // 直接跑 tsc 不会检查业务代码——本配置补上 include，供 doctor.sh / CI 使用）。
+  "extends": "./temp/tsconfig.cocos.json",
+  "compilerOptions": {
+    "strict": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM"],
+    "module": "ES2020",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "experimentalDecorators": true,
+    "skipLibCheck": true,
+    "types": [
+      "./temp/declarations/cc.custom-macro",
+      "./temp/declarations/jsb",
+      "./temp/declarations/cc",
+      "./temp/declarations/cc.env"
+    ]
+  },
+  "files": [
+    "./node_modules/minigame-api-typings/index.d.ts"
+  ],
+  "include": [
+    "assets/scripts/**/*.ts"
+  ]
+}

@@ -6,8 +6,9 @@
   "description": "《末班车：废土仓库》微信小游戏原型",
   "scripts": {
     "doctor": "bash tools/doctor.sh",
+    "typecheck": "bash tools/typecheck.sh",
     "test": "node --test tests/*.test.mjs",
-    "verify": "npm run doctor && npm test && node tools/verify-project.mjs",
+    "verify": "npm run doctor && npm run typecheck && npm test && node tools/verify-project.mjs",
     "build:web": "bash tools/cocos-build.sh web",
     "build:wechat": "bash tools/cocos-build.sh wechat",
     "wechat:islogin": "bash tools/wechat-cli.sh islogin",
@@ -25,6 +26,7 @@
   },
   "uuid": "e5bba2b3-40a1-4006-9e28-d3672b930200",
   "devDependencies": {
-    "minigame-api-typings": "^3.8.21"
+    "minigame-api-typings": "^3.8.21",
+    "typescript": "^5.5.4"
   }
 }

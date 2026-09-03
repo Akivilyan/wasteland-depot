@@ -32,9 +32,9 @@ assets/scripts/platform/      平台适配
 | 文件 | 职责 | 关键导出 |
 | --- | --- | --- |
 | `rng.ts` | 可种子随机源（Mulberry32），规则层所有随机的唯一入口 | `createRng`, `Rng` |
-| `constants.ts` | **唯一允许出现玩法数字的地方**；初始资源、车辆、危险度、油耗等默认值 | `GAME_DAYS`, `STARTING_RESOURCES`, `VEHICLE_DEFAULT`, `FINAL_DAY_INDEX`, `LEG_FUEL_PER_10KM` … |
-| `game.ts` | 玩法数据与装配：五种资源、六个地点、四种职业、事件表与结算 | `RESOURCES`, `LOCATIONS`, `PROFESSIONS`, `createGameConfig`, `pickEvent`, `applyOutcome` |
-| `sim.ts` | 十日核心循环引擎：出发/事件/装车/返程/推进一天，全部纯函数；出发油耗用 route 里程模型 | `createInitialGameState`, `startTrip`, `choose`, `loadCargo`, `returnHome`, `cargoFromTrunk`, `advanceDay` |
+| `constants.ts` | **唯一允许出现玩法数字的地方**；初始资源、车辆、危险度、油耗、道路事件概率等默认值 | `GAME_DAYS`, `STARTING_RESOURCES`, `VEHICLE_DEFAULT`, `FINAL_DAY_INDEX`, `LEG_FUEL_PER_10KM`, `ROAD_EVENT_CHANCE` … |
+| `game.ts` | 玩法数据与装配：五种资源、六个地点、四种职业、事件表与后果结算 | `RESOURCES`, `LOCATIONS`, `PROFESSIONS`, `createGameConfig`, `pickEvent`, `applyOutcome` |
+| `sim.ts` | 十日核心循环引擎：出发/道路事件/装车/返程/推进一天，全部纯函数；出发油耗用 route 里程模型。事件拆为「抽取」与「结算」两命令，供表现层先展示再等选择 | `createInitialGameState`, `startTrip`, `drawRoadEvent`, `resolveEvent`, `loadCargo`, `returnHome`, `cargoFromTrunk`, `advanceDay` |
 | `scenario.ts` | GameState 的存档编解码（底层存储复用 platform） | `SAVE_KEY`, `encodeGameState`, `decodeGameState` |
 | `trunk.ts` | 车辆货舱 4×3 占格/堆叠/移动/交换规则（[INVENTORY_DESIGN.md](INVENTORY_DESIGN.md)） | `createTrunkState`, `canPlace`, `placeItem`, `moveItem`, `removeItem`, `encode/decodeTrunkState` |
 | `route.ts` | 切片 003：单线公路骨架、里程油耗、行程相位机（map/driving/atNode/returning） | `DEPOT_ROUTE`, `legFuelCost`, `locationKm`, `depart`, `arrive`, `departReturn`, `backToMap`, `encode/decodeTripState` |
@@ -48,7 +48,7 @@ assets/scripts/platform/      平台适配
 | 文件 | 职责 |
 | --- | --- |
 | `PrototypeScene.ts` | 挂在 `Prototype.scene` 的主组件；货舱原型界面（4×3 网格 + 候选卡 + 清空），读写 `trunk.v1` |
-| `TravelScene.ts` | 切片 003/004/005：地图选点、横轴行车卷轴演出、节点抵达面板（候选物资 + 装舱）、返程抵仓结算（returnHome + advanceDay）、十日 GameState 的载入/持久化与结局面板；与 PrototypeScene 同场景共存（Travel 覆盖其上） |
+| `TravelScene.ts` | 切片 003/004/005/006：地图选点、横轴行车卷轴演出、**行车途中道路事件面板**（draw→暂停卷轴→选择→resolve→恢复）、节点抵达面板（候选物资 + 装舱）、返程抵仓结算（returnHome + advanceDay）、十日 GameState 的载入/持久化与结局面板；与 PrototypeScene 同场景共存（Travel 覆盖其上）。行车段计时全部走 tween（scheduleOnce 不随 tween 暂停），事件弹出时整组 pause/resume |
 | `TrunkGrid.ts` | 切片 004 抽出的可复用 4×3 货舱网格（绘制 + 点选放置 + 高亮/闪烁）；PrototypeScene 与 TravelScene 共用，规则全部来自 `core/trunk.ts`，通过 `onChange` 回传新状态 |
 
 ### 平台层 `assets/scripts/platform/`
@@ -98,6 +98,7 @@ assets/scripts/platform/      平台适配
 ## 5. 构建、测试与微信兼容
 
 - 常用命令与环境前置见 [README.md](../README.md)；agent 工作守则见 `.agents/skills/wasteland-depot-dev/SKILL.md`。
+- 验证链 `npm run verify`：doctor（环境）→ **typecheck**（`tsconfig.check.json` 对业务代码 + 引擎声明全量类型检查，`temp/declarations` 未生成时跳过）→ node 规则测试 → 静态护栏。编辑器自身编译不构成命令行闸门，详见 [DECISIONS.md](DECISIONS.md) ADR-007。
 - 规则测试在 `tests/*.test.mjs`（node 原生 `--test`，直接 import `core/*.ts`），改规则必须同步加/改测试。
 - 微信新运行时兼容（`window`/`global`/`rAF` 缺失等）由 `tools/patch-wechat-deprecated.mjs` 在每次 `build:wechat` 后自动打七个幂等补丁；背景与对照实验见 [DECISIONS.md](DECISIONS.md) ADR-002。
 - **禁用 Map/Set 展开语法**：微信构建会把 `[...map]` 错译成 `[].concat(map)`（得到 `[Map]`），由 `tools/verify-project.mjs` 静态护栏强制；Map/Set 一律用 `forEach`。见 [DECISIONS.md](DECISIONS.md) ADR-006。

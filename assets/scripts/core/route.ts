@@ -76,20 +76,20 @@ export interface DepartResult {
  * 从仓库出发前往目的地。合法性在这里裁决：
  * 目的地必须在路线上、燃油足够。燃油结算一次，行车/返程不再扣。
  */
-export function depart(state: TripState, destination: LocationId, fuel: number): DepartResult {
+export function depart(state: TripState, destination: string, fuel: number): DepartResult {
   if (state.phase !== 'map') {
     return { state, fuelCost: 0, reason: '当前不在地图阶段。' };
   }
-  if (!routeHasNode(destination) || destination === 'depot') {
+  const node = DEPOT_ROUTE.find((n) => n.id === destination);
+  if (node === undefined || node.id === 'depot') {
     return { state, fuelCost: 0, reason: '目的地不在路线图上。' };
   }
-  const node = DEPOT_ROUTE.find((n) => n.id === destination);
   const cost = legFuelCost(node === undefined ? 0 : node.km);
   if (fuel < cost) {
     return { state, fuelCost: 0, reason: `燃油不足：前往该地需要 ${cost} 燃油。` };
   }
   return {
-    state: { version: 1, phase: 'driving', destination, fuelSpent: cost },
+    state: { version: 1, phase: 'driving', destination: node.id, fuelSpent: cost },
     fuelCost: cost,
     reason: null,
   };

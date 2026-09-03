@@ -33,13 +33,16 @@ import {
   encodeTripState,
   decodeTripState,
 } from '../core/route.ts';
-import { LOCATIONS } from '../core/game.ts';
+import { LOCATIONS, createGameConfig } from '../core/game.ts';
+import type { LocationId, GameEvent, GameConfig } from '../core/game.ts';
 import {
   createInitialGameState,
   startTrip,
   returnHome,
   cargoFromTrunk,
   advanceDay,
+  drawRoadEvent,
+  resolveEvent,
 } from '../core/sim.ts';
 import type { GameState } from '../core/sim.ts';
 import { SAVE_KEY as GAME_SAVE_KEY, encodeGameState, decodeGameState } from '../core/scenario.ts';
@@ -97,6 +100,8 @@ const COLOR_DIM = new Color(159, 166, 151, 255);
 // —— 行车卷轴几何 ——
 const DRIVE_SPEED = 620;      // px/s 卷轴滚动速度
 const DRIVE_DURATION = 4.2;   // 单程演出时长（秒）
+const EVENT_TRIGGER_AT = 1.4; // 出发后多少秒抽道路事件（返程不抽）
+const EVENT_RESULT_HOLD = 1.0; // 选择后后果文案展示秒数，再恢复卷轴
 const SKY_BOTTOM = 320;       // 天空底部 y（天空占上部）
 const ROAD_LINE_Y = -160;     // 路面中线 y
 
@@ -127,15 +132,20 @@ export class TravelScene extends Component {
   private statusLabel: Label | null = null;
   private selectedNode: string | null = null;
   private nodeVisuals: Map<string, { ring: Node; plate: Node }> = new Map();
-  private driveTween: Tween<Vec3> | null = null;
+  /** 行车段全部活动 tween（卷轴×2、结束计时、事件触发）；事件面板弹出时整组暂停。 */
+  private driveTweens: Tween<Node>[] = [];
   private driveCtx: DriveContext | null = null;
+  /** 道路事件会话（SLICE_006）：本趟抽中的事件与面板节点，结算后清空。 */
+  private readonly gameConfig: GameConfig = createGameConfig();
+  private pendingEvent: GameEvent | null = null;
+  private eventPanel: Node | null = null;
   /** 节点面板（候选物资 + 货舱）运行期节点；返程时销毁。 */
   private nodePanel: Node | null = null;
   private nodeGrid: TrunkGrid | null = null;
   private nodeLootCards: Map<string, Node> = new Map();
   private nodeStatus: Label | null = null;
 
-  start(): void {
+  override start(): void {
     this.node.getComponent(UITransform)?.setContentSize(DESIGN_WIDTH, DESIGN_HEIGHT);
     this.trip = decodeTripState(this.storage.get(SAVE_KEY));
     this.loot = decodeLootState(this.storage.get(LOOT_SAVE_KEY));
@@ -208,7 +218,7 @@ export class TravelScene extends Component {
     }
 
     // 节点：仓库在底部，地点沿线上分布
-    const minKm = DEPOT_ROUTE[DEPOT_ROUTE.length - 1].km;
+    const minKm = DEPOT_ROUTE[DEPOT_ROUTE.length - 1]!.km;
     DEPOT_ROUTE.forEach((node, idx) => {
       const t = node.km / minKm;
       const y = MAP_BOTTOM + t * (MAP_TOP - MAP_BOTTOM);
@@ -325,10 +335,11 @@ export class TravelScene extends Component {
   private onGo(): void {
     if (this.trip.phase !== 'map' || this.selectedNode === null || this.selectedNode === 'depot') return;
     if (this.game.ending !== null) return;
-    const destination = this.selectedNode;
+    // selectedNode 来自路线节点（LocationId | 'depot'），depot 已在上面拦掉
+    const destination = this.selectedNode as LocationId;
     const fuelBefore = this.game.stock.fuel;
     // 出发扣费在规则层一次裁决：里程油耗 + 弹药，失败提示并停留在地图
-    const pay = startTrip(this.game, destination as never);
+    const pay = startTrip(this.game, destination);
     if (pay.state === this.game) {
       if (this.statusLabel !== null) {
         this.statusLabel.string = pay.message;
@@ -338,7 +349,7 @@ export class TravelScene extends Component {
     this.game = pay.state;
     this.persistGame();
     // 行程相位机沿用同一油耗模型（用扣费前油量校验，此处必然通过）
-    const result = depart(this.trip, destination as never, fuelBefore);
+    const result = depart(this.trip, destination, fuelBefore);
     if (result.fuelCost === 0) {
       if (this.statusLabel !== null && result.reason !== null) {
         this.statusLabel.string = result.reason;
@@ -428,6 +439,9 @@ export class TravelScene extends Component {
     this.mapRoot.active = false;
     this.driveRoot.active = true;
     this.driveCtx = ctx;
+    this.pendingEvent = null;
+    this.eventPanel = null;
+    this.driveRoot.getChildByName('SkipBtn')!.active = true;
     const title = this.driveRoot.getChildByName('DriveTitle');
     const titleLbl = title?.getComponent(Label);
     if (titleLbl !== undefined && titleLbl !== null) {
@@ -436,28 +450,38 @@ export class TravelScene extends Component {
     const mid = this.driveRoot.getChildByName('MidScroll');
     const near = this.driveRoot.getChildByName('NearScroll');
     if (mid === null || near === null) return;
+    mid.setPosition(0, 0, 0);
+    near.setPosition(0, 0, 0);
     const totalShift = DESIGN_WIDTH * 2;
-    this.driveTween = tween(mid)
-      .by(DRIVE_DURATION, { position: new Vec3(-totalShift, 0, 0) })
-      .start();
-    tween(near)
-      .by(DRIVE_DURATION, { position: new Vec3(-totalShift * 1.35, 0, 0) })
-      .start();
-    this.scheduleOnce(() => this.finishDrive(), DRIVE_DURATION);
+    // 行车段全部计时都走 tween（卷轴、结束、事件触发）：事件面板弹出时
+    // 整组 pause/resume，scheduleOnce 不会随 tween 暂停，故不再使用。
+    this.driveTweens = [
+      tween(mid).by(DRIVE_DURATION, { position: new Vec3(-totalShift, 0, 0) }).start(),
+      tween(near).by(DRIVE_DURATION, { position: new Vec3(-totalShift * 1.35, 0, 0) }).start(),
+      tween(this.driveRoot).delay(DRIVE_DURATION).call(() => this.finishDrive()).start(),
+    ];
+    if (!ctx.returning) {
+      // 去程途中抽道路事件（返程不抽；密度属 D8）
+      this.driveTweens.push(
+        tween(this.driveRoot).delay(EVENT_TRIGGER_AT).call(() => this.maybeTriggerRoadEvent()).start(),
+      );
+    }
   }
 
   private skipDrive(): void {
     if (this.driveRoot === null || !this.driveRoot.active) return;
+    // 事件面板显示期间「跳过」已隐藏；防御性再拦一次：事件必须先结算
+    if (this.eventPanel !== null) return;
     this.finishDrive();
   }
 
   private finishDrive(): void {
     if (this.driveRoot === null) return;
-    this.unschedule(this.finishDriveCallback);
-    if (this.driveTween !== null) {
-      this.driveTween.stop();
-      this.driveTween = null;
+    for (const tw of this.driveTweens) {
+      tw.stop();
     }
+    this.driveTweens = [];
+    this.closeEventPanel();
     const mid = this.driveRoot.getChildByName('MidScroll');
     const near = this.driveRoot.getChildByName('NearScroll');
     mid?.setPosition(0, 0, 0);
@@ -469,7 +493,100 @@ export class TravelScene extends Component {
     ctx?.onArrive();
   }
 
-  private readonly finishDriveCallback = (): void => this.finishDrive();
+  // —— 道路事件（SLICE_006）——
+
+  private maybeTriggerRoadEvent(): void {
+    if (this.driveCtx === null || this.eventPanel !== null) return;
+    // 种子用时间戳：表现层一次性会话不要求可重放，规则确定性由可种子 Rng + node 测试保证
+    const rng = createRng(Date.now() % 2147483647);
+    const event = drawRoadEvent(rng, this.gameConfig);
+    if (event === null) return;
+    this.pendingEvent = event;
+    for (const tw of this.driveTweens) {
+      tw.pause();
+    }
+    const skipBtn = this.driveRoot?.getChildByName('SkipBtn');
+    if (skipBtn !== undefined && skipBtn !== null) {
+      skipBtn.active = false;
+    }
+    this.showEventPanel(event);
+  }
+
+  private showEventPanel(event: GameEvent): void {
+    if (this.driveRoot === null) return;
+    const panel = new Node('EventPanel');
+    panel.setParent(this.driveRoot);
+    panel.addComponent(UITransform).setContentSize(640, 560);
+    panel.setPosition(0, 40, 0);
+    const g = panel.addComponent(Graphics);
+    g.fillColor = new Color(48, 52, 48, 245);
+    g.roundRect(-320, -280, 640, 560, 16);
+    g.fill();
+    g.lineWidth = 3;
+    g.strokeColor = new Color(207, 149, 50, 255);
+    g.roundRect(-320, -280, 640, 560, 16);
+    g.stroke();
+    // 拦截触摸，防止点穿到卷轴/跳过按钮
+    for (const evt of [Node.EventType.TOUCH_START, Node.EventType.TOUCH_MOVE, Node.EventType.TOUCH_END]) {
+      panel.on(evt, (): void => undefined);
+    }
+
+    const kindLabel: Record<GameEvent['kind'], string> = {
+      hazard: '险情',
+      discovery: '发现',
+      encounter: '遭遇',
+      shelter: '掩体',
+    };
+    this.createLabel(panel, 'EventKind', `道路 · ${kindLabel[event.kind]}`, 0, 230, 20, COLOR_DIM);
+    this.createLabel(panel, 'EventTitle', event.title, 0, 170, 36, COLOR_TEXT);
+    event.choices.forEach((choice, i) => {
+      this.createButton(panel, `EventChoice-${i}`, choice, 0, 40 - i * 110, () => this.onEventChoice(i));
+    });
+    this.eventPanel = panel;
+  }
+
+  private onEventChoice(index: number): void {
+    const event = this.pendingEvent;
+    if (event === null || this.eventPanel === null) return;
+    const result = resolveEvent(this.game, event, index, this.gameConfig);
+    this.game = result.state;
+    this.persistGame();
+    // 选项按钮替换为后果文案：销毁旧按钮，结果停留片刻后恢复卷轴
+    for (let i = 0; i < event.choices.length; i++) {
+      this.eventPanel.getChildByName(`EventChoice-${i}`)?.destroy();
+    }
+    const titleLbl = this.eventPanel.getChildByName('EventTitle')?.getComponent(Label);
+    if (titleLbl !== null && titleLbl !== undefined) {
+      titleLbl.string = result.message;
+    }
+    this.pendingEvent = null;
+    const panel = this.eventPanel;
+    tween(panel)
+      .delay(EVENT_RESULT_HOLD)
+      .call(() => this.closeEventPanelAndResume())
+      .start();
+  }
+
+  private closeEventPanelAndResume(): void {
+    // 演出可能已在结果停留期间结束（finishDrive 清 driveCtx），不再恢复
+    if (this.driveCtx === null) return;
+    this.closeEventPanel();
+    for (const tw of this.driveTweens) {
+      tw.resume();
+    }
+    const skipBtn = this.driveRoot?.getChildByName('SkipBtn');
+    if (skipBtn !== undefined && skipBtn !== null) {
+      skipBtn.active = true;
+    }
+  }
+
+  private closeEventPanel(): void {
+    if (this.eventPanel !== null) {
+      this.eventPanel.destroy();
+      this.eventPanel = null;
+    }
+    this.pendingEvent = null;
+  }
 
   // —— 抵达节点（SLICE_004：候选物资 → 货舱取舍）——
 
