@@ -37,6 +37,5 @@ After a WeChat build, use `npm run wechat:open` for the simulator and `npm run w
 ## Verify observable outcomes
 
 - For rule changes, add or update Node tests under `tests`.
-- For presentation changes, build at least the Web Mobile target before claiming success.
-- For platform changes, verify the generated `build/wechatgame` structure and then use the WeChat developer tools when available.
+- When to run which verification layer (T0 verify / T1 targeted regression / T2 smoke / T3 full regression, plus stage-end review) is defined solely by `docs/VERIFY_CADENCE.md`. Default for daily slices: T0 only. The old "build Web Mobile for every presentation change" rule is superseded by it.
 - Record confirmed decisions and remaining blockers in project documentation; distinguish implemented facts from proposed product ideas.

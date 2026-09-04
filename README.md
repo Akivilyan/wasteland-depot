@@ -44,6 +44,7 @@ docs/             设计与决策文档（见下）
 | [docs/GAME_SKELETON.md](docs/GAME_SKELETON.md) | 游戏愿景、核心循环、内容边界、广告底线、停车场（**游戏是什么**） |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 三层边界、文件职责、存档键位、复用清单（**代码怎么组织**，权威出处） |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | 已确认的技术/产品决策记录（ADR，**为什么这么定**） |
+| [docs/VERIFY_CADENCE.md](docs/VERIFY_CADENCE.md) | 验证分层（T0~T3）与触发时机、阶段审核、任务卡规范、架构师/执行工分工（**何时跑哪层验证**，权威出处） |
 | [docs/PENDING_DECISIONS.md](docs/PENDING_DECISIONS.md) | 待财哥/丧彪拍板的产品项与当前默认值 |
 | [docs/INVENTORY_DESIGN.md](docs/INVENTORY_DESIGN.md) | 车辆货舱占格交互设计提案 |
 | [docs/SLICE_00X_*.md](docs/) | 各开发切片的目标、范围、验证结果与人工验收状态 |
@@ -52,7 +53,7 @@ Agent 工作守则（命令、环境、回归方式）在 `.agents/skills/wastel
 
 ## 切片进度
 
-每个切片独立可运行、只验证一个问题；自动验证（规则测试 + Web/微信构建）与人工手感验收分开记录。
+每个切片独立可运行、只验证一个问题；**验证分层与触发时机见 [docs/VERIFY_CADENCE.md](docs/VERIFY_CADENCE.md)**（日常切片默认只跑 T0 `npm run verify`，模拟器回归与全项目审阅集中在阶段末）；自动验证与人工手感验收分开记录。
 
 | 切片 | 内容 | 自动验证 | 人工验收 |
 | --- | --- | --- | --- |
