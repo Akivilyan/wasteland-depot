@@ -16,7 +16,7 @@
     "wechat:preview": "bash tools/wechat-cli.sh preview"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18"
   },
   "cocos": {
     "creator": "3.8.8"

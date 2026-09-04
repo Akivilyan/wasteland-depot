@@ -108,6 +108,28 @@ test('resolveEvent vehicle protection reduces damage outcome', () => {
   assert.match(message, /车辆受损 3/, '防护 2 点应把 5 点伤害减到 3');
 });
 
+test('resolveEvent recruit outcome adds a survivor to the depot', () => {
+  const state = createInitialGameState();
+  const config = createGameConfig();
+  const event = config.eventTable.find((e) => e.id === 'survivor_call');
+  assert.ok(event);
+  const { state: after, message } = resolveEvent(state, event, 0, config); // 救助 → 招募
+  assert.equal(after.survivors.length, 1, '救助必须真实招募幸存者');
+  assert.equal(after.survivors[0].profession, 'doctor');
+  assert.equal(after.day, 1, '招募不推进天数');
+  assert.match(message, /医生/);
+  assert.match(after.log.at(-1) ?? '', /加入了据点/);
+});
+
+test('resolveEvent damage outcome flags vehicleDamaged', () => {
+  const state = createInitialGameState();
+  const config = createGameConfig();
+  const event = config.eventTable.find((e) => e.id === 'ambush');
+  assert.ok(event);
+  const { state: after } = resolveEvent(state, event, 0, config); // 反击 → damage
+  assert.equal(after.vehicleDamaged, true, 'damage 后果必须置车辆损坏标记');
+});
+
 test('resolveEvent rejects invalid choice without mutating state', () => {
   const state = createInitialGameState();
   const config = createGameConfig();
@@ -177,6 +199,39 @@ test('advanceDay consumes food, grows danger, and advances the day', () => {
   const { state: after } = advanceDay(state);
   assert.equal(after.day, 2);
   assert.ok(after.danger > state.danger, 'danger should grow each day');
+});
+
+test('advanceDay uses DANGER_STEP for the hunger penalty', () => {
+  const fed = createInitialGameState();
+  const starving = { ...createInitialGameState(), stock: { ...STARTING_RESOURCES, food: 1 } };
+  const fedNext = advanceDay(fed).state;
+  const starvedNext = advanceDay(starving).state;
+  assert.equal(starvedNext.danger - starving.danger, fedNext.danger - fed.danger + 1,
+    'food shortage must add exactly one DANGER_STEP on top of daily growth');
+});
+
+test('advanceDay only ends the game after day 10 has been played out', () => {
+  // 玩满十天：第 9 天结算 → 第 10 天（无结局），第 10 天结算 → ending。
+  // 旧行为在第 9 天返仓时即触发结局，玩家实际只玩 9 天。
+  let state = createInitialGameState();
+  for (let i = 0; i < 9; i++) {
+    state = advanceDay(state).state;
+    assert.equal(state.ending, null, `结算到第 ${state.day} 天不应提前出结局`);
+  }
+  state = advanceDay(state).state;
+  assert.equal(state.day, GAME_DAYS);
+  assert.equal(state.ending, 'survived', '第 10 天结算完毕才进入存活结局');
+});
+
+test('advanceDay backfills survived ending for day-10 saves without one', () => {
+  // 注入/异常可能产生 day==GAME_DAYS 且 ending==null 的存档；守卫必须兜底，不能永远卡住。
+  const stuck = { ...createInitialGameState(), day: GAME_DAYS };
+  const { state: after, message } = advanceDay(stuck);
+  assert.equal(after.ending, 'survived', 'day-10 存档补结局');
+  assert.match(message, /最后一天/);
+  // 已有结局的存档原样返回，不覆盖
+  const done = { ...createInitialGameState(), day: GAME_DAYS, ending: 'survived' };
+  assert.equal(advanceDay(done).state, done, '已有结局的存档原样返回');
 });
 
 test('ten days of simulation reach a valid ending deterministically', () => {

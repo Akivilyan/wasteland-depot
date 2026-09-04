@@ -11,7 +11,7 @@
 
 - 规则层 `core/loot.ts`：
   - `LOOT_TABLES`：每个地点按 `lean/guaranteed`（game.ts 已有）配权重表，条目 = 货舱物品 id（复用 trunk 的 `DEFAULT_ITEM_DEFS`，补 `ammo` 定义）。
-  - `rollNodeLoot(locationId, rng)`：种子化抽取 4~6 件候选（保证至少 1 件 guaranteed）。
+  - `rollNodeLoot(locationId, rng)`：种子化抽取 4~5 件候选（互斥抽取，上限即物品种类数 5；保证至少 1 件 guaranteed）。
   - `LootState` 存档编解码（`wasteland-depot.loot.v1`），非法回退空态。
 - 表现层：
   - 抽出 `presentation/TrunkGrid.ts`：把 PrototypeScene 的 4×3 货舱网格（渲染 + 点选放置 + 高亮）抽成可复用组件；PrototypeScene 改为使用它，行为不变。

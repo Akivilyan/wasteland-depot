@@ -19,9 +19,9 @@ assets/scripts/platform/      平台适配
 ```
 
 - **规则层**不依赖 Cocos 或微信 API，随机必须走 [rng.ts](../assets/scripts/core/rng.ts)（同 seed + 同操作序列 → 同结果）。
-- **表现层**不自行修改规则数据：点击/拖拽最终都转换成规则层命令（如货舱统一走 `placeItem`），再通过回调把新状态交回。
+- **表现层**不自行修改规则数据：点击/拖拽最终都转换成规则层命令（如货舱统一走 `placeItem`），再通过回调把新状态交回。表现层不直接碰 `wx`（平台访问只走 platform 适配器）。
 - **平台层**是唯一接触 `wx` 的地方，游戏通过适配接口（`StoragePort` 等）使用，不直接调微信 API。
-- 边界由 `tools/verify-project.mjs` 在 `npm run verify` 时**静态强制**：core 出现 `from 'cc'` 或 `wx.` 即失败。
+- 边界由 `tools/verify-project.mjs` 在 `npm run verify` 时**静态强制，覆盖全部源文件**：core 任何文件出现 `from 'cc'` 或 `wx.` 即失败；presentation 任何文件出现 `wx.` 即失败。
 
 首版保持纯 2D、竖屏、单机；不引入 3D、物理引擎、骨骼动画、联网或第三方运行时，除非有明确玩法需要（见 [DECISIONS.md](DECISIONS.md) ADR-001）。
 
@@ -32,10 +32,10 @@ assets/scripts/platform/      平台适配
 | 文件 | 职责 | 关键导出 |
 | --- | --- | --- |
 | `rng.ts` | 可种子随机源（Mulberry32），规则层所有随机的唯一入口 | `createRng`, `Rng` |
-| `constants.ts` | **唯一允许出现玩法数字的地方**；初始资源、车辆、危险度、油耗、道路事件概率等默认值 | `GAME_DAYS`, `STARTING_RESOURCES`, `VEHICLE_DEFAULT`, `FINAL_DAY_INDEX`, `LEG_FUEL_PER_10KM`, `ROAD_EVENT_CHANCE` … |
-| `game.ts` | 玩法数据与装配：五种资源、六个地点、四种职业、事件表与后果结算 | `RESOURCES`, `LOCATIONS`, `PROFESSIONS`, `createGameConfig`, `pickEvent`, `applyOutcome` |
-| `sim.ts` | 十日核心循环引擎：出发/道路事件/装车/返程/推进一天，全部纯函数；出发油耗用 route 里程模型。事件拆为「抽取」与「结算」两命令，供表现层先展示再等选择 | `createInitialGameState`, `startTrip`, `drawRoadEvent`, `resolveEvent`, `loadCargo`, `returnHome`, `cargoFromTrunk`, `advanceDay` |
-| `scenario.ts` | GameState 的存档编解码（底层存储复用 platform） | `SAVE_KEY`, `encodeGameState`, `decodeGameState` |
+| `constants.ts` | **唯一允许出现玩法数字的地方**；初始资源、车辆、危险度、油耗、道路事件概率等默认值 | `GAME_DAYS`, `STARTING_RESOURCES`, `VEHICLE_DEFAULT`, `MAX_DANGER`, `LEG_FUEL_PER_10KM`, `ROAD_EVENT_CHANCE` … |
+| `game.ts` | 玩法数据与装配：五种资源、六个地点、四种职业、事件表与后果结算（gain/lose/damage/reveal/**recruit**） | `RESOURCES`, `LOCATIONS`, `PROFESSIONS`, `createGameConfig`, `pickEvent`, `applyOutcome` |
+| `sim.ts` | 十日核心循环引擎：出发/道路事件/装车/返程/推进一天，全部纯函数；出发油耗用 route 里程模型。事件拆为「抽取」与「结算」两命令；recruit 后果招募幸存者、damage 后果置 `vehicleDamaged` | `createInitialGameState`, `startTrip`, `drawRoadEvent`, `resolveEvent`, `loadCargo`, `returnHome`, `cargoFromTrunk`, `advanceDay`, `SURVIVED_ENDING` |
+| `scenario.ts` | GameState 的存档编解码与**全部存档键位登记**（底层存储复用 platform） | `SAVE_KEY`, `ALL_SAVE_KEYS`, `encodeGameState`, `decodeGameState` |
 | `trunk.ts` | 车辆货舱 4×3 占格/堆叠/移动/交换规则（[INVENTORY_DESIGN.md](INVENTORY_DESIGN.md)） | `createTrunkState`, `canPlace`, `placeItem`, `moveItem`, `removeItem`, `encode/decodeTrunkState` |
 | `route.ts` | 切片 003：单线公路骨架、里程油耗、行程相位机（map/driving/atNode/returning） | `DEPOT_ROUTE`, `legFuelCost`, `locationKm`, `depart`, `arrive`, `departReturn`, `backToMap`, `encode/decodeTripState` |
 | `loot.ts` | 切片 004：按地点倾向加权抽取候选物资；装舱语义全部复用 trunk | `rollNodeLoot`, `takeLoot`, `putBackLoot`, `buildLootWeights`, `encode/decodeLootState` |
@@ -59,7 +59,7 @@ assets/scripts/platform/      平台适配
 
 ## 3. 存档键位
 
-全部走 `platform/storage.ts`，规则层只负责编解码。新增存档时在此登记。
+全部走 `platform/storage.ts`，规则层只负责编解码。**键位的唯一登记处是 `core/scenario.ts` 的 `ALL_SAVE_KEYS`**（清档/迁移/排查工具遍历它，新增存档键必须在此登记）。
 
 | 键 | 内容 | 编解码 | 读写方 |
 | --- | --- | --- | --- |
@@ -69,7 +69,7 @@ assets/scripts/platform/      平台适配
 | `wasteland-depot.loot.v1` | 节点候选物资会话（loot） | `loot.ts` | TravelScene |
 | `wasteland-depot.trip-trunk.v1` | 节点装舱中的货舱（trunk） | `trunk.ts` | TravelScene |
 
-非法/损坏数据一律回退到初始空态，不抛错中断。
+非法/损坏数据一律回退到初始空态，不抛错中断。行程相位恢复策略：`atNode` 重建节点面板；`driving`/`returning` 无法恢复演出中途，回退到地图重新选点（油弹为本次外出已付成本，不二次结算）。
 
 ## 4. 复用官方能力，不重复造轮子
 

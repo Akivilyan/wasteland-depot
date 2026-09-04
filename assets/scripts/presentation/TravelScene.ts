@@ -35,6 +35,7 @@ import {
 } from '../core/route.ts';
 import { LOCATIONS, createGameConfig } from '../core/game.ts';
 import type { LocationId, GameEvent, GameConfig } from '../core/game.ts';
+import { isLootItemId } from '../core/loot.ts';
 import {
   createInitialGameState,
   startTrip,
@@ -45,7 +46,7 @@ import {
   resolveEvent,
 } from '../core/sim.ts';
 import type { GameState } from '../core/sim.ts';
-import { SAVE_KEY as GAME_SAVE_KEY, encodeGameState, decodeGameState } from '../core/scenario.ts';
+import { SAVE_KEY as GAME_SAVE_KEY, ALL_SAVE_KEYS, encodeGameState, decodeGameState } from '../core/scenario.ts';
 import { GAME_DAYS } from '../core/constants.ts';
 import type { LootState } from '../core/loot.ts';
 import {
@@ -154,7 +155,13 @@ export class TravelScene extends Component {
     this.buildDriveLayer();
     this.buildMap();
     this.refreshStatus();
-    // 恢复到 atNode 相位时重建节点面板
+    // 相位恢复：atNode 重建节点面板；driving/returning 无法恢复演出中途
+    // （油弹已扣、进度不可重放），回退到地图重新选点——已是本次外出的已付成本，
+    // 不再走 settleReturn 二次扣一天；ending 结局面板兜底重建。
+    if (this.trip.phase === 'driving' || this.trip.phase === 'returning') {
+      this.trip = backToMap(this.trip);
+      this.persistTrip();
+    }
     if (this.trip.phase === 'atNode' && this.trip.destination !== null) {
       this.showNodeArrival(this.tripDestinationLabel(this.trip.destination));
     } else if (this.game.ending !== null) {
@@ -308,7 +315,7 @@ export class TravelScene extends Component {
         ? `已选 ${this.tripDestinationLabel(dest.id)}（${dest.km}km，油 ${cost}）· 点「出发」`
         : `燃油不足：需 ${cost}，现有 ${this.game.stock.fuel}`;
     } else {
-      this.statusLabel.string = `油 ${this.game.stock.fuel} · 弹 ${this.game.stock.ammo} · 食 ${this.game.stock.food} · 危险度 ${this.game.danger} · 点选目的地出发`;
+      this.statusLabel.string = `油 ${this.game.stock.fuel} · 弹 ${this.game.stock.ammo} · 食 ${this.game.stock.food} · 险 ${this.game.danger} · 人 ${this.game.survivors.length} · 点选目的地出发`;
     }
     this.refreshGoButton();
   }
@@ -596,10 +603,13 @@ export class TravelScene extends Component {
     this.closeNodePanel();
 
     // 战利品会话：恢复或新抽（seed 用时间戳，表现层一次性会话不要求可重放）
-    if (this.loot === null || this.loot.location !== this.trip.destination) {
-      const seed = Date.now() % 2147483647;
-      this.loot = rollNodeLoot(this.trip.destination as never, createRng(seed), seed);
-      this.persistLoot();
+    const destination = this.trip.destination;
+    if (destination !== null && isLootItemId(destination)) {
+      if (this.loot === null || this.loot.location !== destination) {
+        const seed = Date.now() % 2147483647;
+        this.loot = rollNodeLoot(destination, createRng(seed), seed);
+        this.persistLoot();
+      }
     }
 
     const panel = new Node('NodePanel');
@@ -625,7 +635,7 @@ export class TravelScene extends Component {
     cardsRoot.setParent(panel);
     cardsRoot.setPosition(0, 380, 0);
     this.nodeLootCards = new Map();
-    const remaining = remainingLoot(this.loot);
+    const remaining = this.loot === null ? [] : remainingLoot(this.loot);
     remaining.forEach((roll, i) => {
       const card = this.createLootCard(cardsRoot, roll.itemId, i, remaining.length);
       this.nodeLootCards.set(roll.itemId, card);
@@ -655,8 +665,8 @@ export class TravelScene extends Component {
       },
       onItemRemoved: (itemId, amount) => {
         // 整组取回 → 候选卡还原（loot 与货舱一一对应：一件候选 = 一件货舱物品）
-        if (this.loot !== null) {
-          const back = putBackLoot(this.loot, itemId as never, amount);
+        if (this.loot !== null && isLootItemId(itemId)) {
+          const back = putBackLoot(this.loot, itemId, amount);
           this.loot = back.state;
           this.persistLoot();
           this.rebuildLootCards();
@@ -695,7 +705,7 @@ export class TravelScene extends Component {
   }
 
   private onLootCardTapped(itemId: string): void {
-    if (this.loot === null || this.nodeGrid === null) return;
+    if (this.loot === null || this.nodeGrid === null || !isLootItemId(itemId)) return;
     // 已选中的货舱物品类型 → 选中态即「准备装入」：直接找第一个空位自动放置
     const spot = firstFreeSpot(this.nodeGrid.state, itemDef(DEFAULT_ITEM_DEFS, itemId));
     if (spot === null) {
@@ -711,7 +721,7 @@ export class TravelScene extends Component {
       }
       return;
     }
-    const taken = takeLoot(this.loot, itemId as never);
+    const taken = takeLoot(this.loot, itemId);
     if (!taken.ok) {
       // 理论不可达：卡存在才能点
       return;
@@ -837,7 +847,7 @@ export class TravelScene extends Component {
     this.createLabel(
       panel,
       'EndingStats',
-      `存活到第 ${GAME_DAYS} 天\n危险度 ${this.game.danger}\n`
+      `存活到第 ${GAME_DAYS} 天\n危险度 ${this.game.danger} · 幸存者 ${this.game.survivors.length} 人\n`
         + `燃油 ${stock.fuel} · 食物 ${stock.food} · 材料 ${stock.material}\n`
         + `药品 ${stock.medicine} · 弹药 ${stock.ammo}`,
       0,
@@ -851,10 +861,10 @@ export class TravelScene extends Component {
 
   /** 清空全部本地存档并重载场景，开新的一局。 */
   private restartGame(): void {
-    this.storage.remove(GAME_SAVE_KEY);
-    this.storage.remove(SAVE_KEY);
-    this.storage.remove(LOOT_SAVE_KEY);
-    this.storage.remove(TRUNK_SAVE_KEY);
+    // 遍历 core 登记的全部键位（含 PrototypeScene 的 trunk.v1），避免漏清
+    for (const key of ALL_SAVE_KEYS) {
+      this.storage.remove(key);
+    }
     const sceneName = director.getScene()?.name ?? 'Prototype';
     director.loadScene(sceneName);
   }

@@ -15,7 +15,6 @@ export const STARTING_RESOURCES = {
 } as const;
 
 export const DAILY_FOOD_COST = 2;
-export const DAILY_FUEL_IDLE_COST = 1;
 export const STARTING_DAY_NUMBER = 1;
 
 /** 仓库初始（4 项设施，见 GAME_SKELETON 第 6 节）。 */
@@ -50,15 +49,14 @@ export const TRIP_AMMO_COST = 1;
  *  当前每趟至多一个事件、返程不抽。 */
 export const ROAD_EVENT_CHANCE = 0.8;
 
-/** 事件导致的危险等级增长步长。 */
-export const DANGER_STEP = 1;
+/** 危险度上限（0..MAX_DANGER）。 */
 export const MAX_DANGER = 10;
 
 /** 世界危险度的增长方式（GAME_SKELETON 13 节未确认，此处为默认值）。 */
 export const DANGER_GROWTH_PER_DAY = 1;
 
-/** 目标：存活到第 10 天结束（GAME_SKELETON 13 节最终目标未确认，此处为默认值）。 */
-export const FINAL_DAY_INDEX = GAME_DAYS - 1;
+/** 食物耗尽时危险度的额外增长步长。 */
+export const DANGER_STEP = 1;
 
 /** 单程油耗换算：每 10km 公路消耗 1 燃油（向上取整，最低 1）。SLICE_003 默认值。 */
 export const LEG_FUEL_PER_10KM = 1;

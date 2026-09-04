@@ -102,7 +102,8 @@ export type EventOutcome =
   | { readonly type: 'gain'; readonly resource: ResourceId; readonly amount: number }
   | { readonly type: 'lose'; readonly resource: ResourceId; readonly amount: number }
   | { readonly type: 'damage'; readonly amount: number }
-  | { readonly type: 'reveal'; readonly location: LocationId };
+  | { readonly type: 'reveal'; readonly location: LocationId }
+  | { readonly type: 'recruit'; readonly profession: ProfessionId };
 
 export interface GameEvent {
   readonly id: string;
@@ -162,9 +163,9 @@ function buildEventTable(): readonly GameEvent[] {
       id: 'survivor_call',
       kind: 'encounter',
       title: '幸存者求救',
-      choices: ['救助（占载重）', '离开'],
+      choices: ['救助（加入据点）', '离开'],
       outcomes: [
-        { type: 'lose', resource: 'medicine', amount: 1 },
+        { type: 'recruit', profession: 'doctor' },
         { type: 'lose', resource: 'food', amount: 1 },
       ],
     },
@@ -172,9 +173,9 @@ function buildEventTable(): readonly GameEvent[] {
       id: 'ambush',
       kind: 'hazard',
       title: '埋伏',
-      choices: ['反击（耗弹药）', '加速逃离（耗燃油）'],
+      choices: ['反击（弹药与车损）', '加速逃离（耗燃油）'],
       outcomes: [
-        { type: 'lose', resource: 'ammo', amount: 3 },
+        { type: 'damage', amount: 2 },
         { type: 'lose', resource: 'fuel', amount: 3 },
       ],
       protectionSensitive: true,
@@ -255,6 +256,10 @@ export function applyOutcome(
   }
   if (outcome.type === 'reveal') {
     return { stock, message: `发现新地点：${locationDef(outcome.location, config).label}` };
+  }
+  if (outcome.type === 'recruit') {
+    const profession = PROFESSIONS.find((p) => p.id === outcome.profession);
+    return { stock, message: `一名${profession?.label ?? outcome.profession}加入了据点` };
   }
   return { stock, message: '' };
 }

@@ -84,7 +84,7 @@ export function depart(state: TripState, destination: string, fuel: number): Dep
   if (node === undefined || node.id === 'depot') {
     return { state, fuelCost: 0, reason: '目的地不在路线图上。' };
   }
-  const cost = legFuelCost(node === undefined ? 0 : node.km);
+  const cost = legFuelCost(node.km);
   if (fuel < cost) {
     return { state, fuelCost: 0, reason: `燃油不足：前往该地需要 ${cost} 燃油。` };
   }

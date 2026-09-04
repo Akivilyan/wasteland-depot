@@ -35,10 +35,9 @@ import {
   VEHICLE_DEFAULT,
   TRIP_AMMO_COST,
   ROAD_EVENT_CHANCE,
-  DANGER_STEP,
   MAX_DANGER,
   DANGER_GROWTH_PER_DAY,
-  FINAL_DAY_INDEX,
+  DANGER_STEP,
 } from './constants.ts';
 
 // —— 游戏态（可序列化，与 scenario.ts 共用）——
@@ -183,10 +182,24 @@ export function resolveEvent(
   if (appliedOutcome.type === 'reveal' && !state.explored.includes(appliedOutcome.location)) {
     explored = [...state.explored, appliedOutcome.location];
   }
+  // damage 后果：车辆损坏标记置位（修复流程属后续切片，D4/维修间）
+  const vehicleDamaged = state.vehicleDamaged || appliedOutcome.type === 'damage';
+  // recruit 后果：幸存者加入据点（id 用当前长度，姓名/受伤等细节留给 D4）
+  let survivors = state.survivors;
+  if (appliedOutcome.type === 'recruit') {
+    survivors = [...state.survivors, {
+      id: state.survivors.length,
+      name: `幸存者 ${state.survivors.length + 1}`,
+      profession: appliedOutcome.profession,
+      wounded: false,
+    }];
+  }
   const next: GameState = {
     ...state,
     stock,
     explored,
+    survivors,
+    vehicleDamaged,
     log: [...state.log, `事件「${event.title}」→ ${message}`],
   };
   return { state: next, message: `事件「${event.title}」→ ${message}` };
@@ -249,7 +262,15 @@ export function cargoFromTrunk(
 // 结算每日食物消耗、危险度增长、检查结局，进入下一天。
 // 这是唯一推进 day 的命令，保证「一天只结算一次」。
 
+/** 结局判定阈值：advanceDay 把 day 推过它即进入结局（D1 默认值：存活到第 10 天结束）。 */
+export const SURVIVED_ENDING = 'survived';
+
 export function advanceDay(state: GameState): ActionResult {
+  // day==GAME_DAYS 说明第 10 天已经结算完毕；任何 ending 为空的该类存档
+  // （注入/异常产生）在此兜底结算，避免永远卡在无结局状态。
+  if (state.day >= GAME_DAYS && state.ending === null) {
+    return { state: { ...state, ending: SURVIVED_ENDING }, message: '已是最后一天，游戏结束。' };
+  }
   if (state.day >= GAME_DAYS) {
     return { state, message: '已是最后一天，游戏结束。' };
   }
@@ -262,11 +283,12 @@ export function advanceDay(state: GameState): ActionResult {
   let danger = Math.min(MAX_DANGER, state.danger + DANGER_GROWTH_PER_DAY);
   let message = `第 ${state.day + 1} 天：食物消耗 ${foodCost}。`;
   if (state.stock.food < DAILY_FOOD_COST) {
-    danger = Math.min(MAX_DANGER, danger + 1);
+    danger = Math.min(MAX_DANGER, danger + DANGER_STEP);
     message += ' 食物耗尽，危险度额外上升。';
   }
   const nextDay = state.day + 1;
-  const ending = nextDay > FINAL_DAY_INDEX ? 'survived' : null;
+  // 玩满 GAME_DAYS 天：第 10 天结算后（nextDay 越过第 10 天）进入存活结局。
+  const ending = nextDay > GAME_DAYS ? SURVIVED_ENDING : null;
 
   const next: GameState = {
     ...state,
@@ -317,3 +339,8 @@ export function canAffordTrip(state: GameState, location: LocationId): boolean {
     && state.stock.ammo >= TRIP_AMMO_COST
     && def.risk <= state.vehicle.range;
 }
+
+// 说明：range 检查当前是「恒真占位」——location.risk 是 0..1 浮点，vehicle.range
+// 默认 2，任何地点都通过。探索距离语义（按 km 还是按路线序号）与 VEHICLE_DEFAULT.range
+// 的消费方（车辆升级/侦察员）均未拍板；接入真实限制前保持现状并在此显式记录
+// （评审 2026-09-03 确认，vehicle.range 当前不参与任何生效的规则）。

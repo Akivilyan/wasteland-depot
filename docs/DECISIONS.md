@@ -58,3 +58,16 @@
 - **决定**：新增 `tsconfig.check.json`（include 业务代码、target/lib ES2020、对引擎 `.d.ts` 全量检查）与 `tools/typecheck.sh`（`temp/declarations` 未生成时跳过），接入 `npm run verify`：doctor → **typecheck** → node 测试 → 静态护栏。
 - **理由**：类型错误在本机秒级报出，成本远低于模拟器回归；引擎 API 表面大、记忆不可靠，tsc 对着官方声明做校验正是「先查手册」原则（ADR-004/ADR-005）的自动化版本。SLICE_006 首次接入即报出 15 处问题，含 2 个潜伏运行时 bug（canPlace 参数、scheduleOnce）。
 - **注意**：tsc 只查类型不查行为，微信构建错译（ADR-006）类问题仍需模拟器行为回归；两道闸门互补。
+
+## ADR-008：全项目评审修订 —— 语义对齐与护栏补全
+
+- 状态：已确认（2026-09-03，全项目评审发现）
+- **背景**：对代码/文档/测试/工具链做了一次全面评审，发现多处「文档承诺与实际执行不符」和「实现与语义不符」：① `verify-project.mjs` 的核心边界断言只读 `prototype-state.ts` 一个探针文件，core 其他 8 个文件引入 `cc`/`wx` 均不会被拦（文档却宣称全层强制）；② 结局判定 `nextDay > FINAL_DAY_INDEX(9)` 使第 9 天返仓即触发结局，与「存活到第 10 天结束」语义不符（实际只玩 9 天）；③ 幸存者求救事件的「救助」实际效果是亏 1 药品、`survivors` 永远为空——EventOutcome 类型无法表达招募；④ damage 后果不置 `vehicleDamaged`、事件表无任何 damage 条目使防护/`protectionSensitive` 全是空转；⑤ 「重新开始」漏清 `trunk.v1`；⑥ driving/returning 相位存档恢复是半死状态。
+- **决定**（本次一并落地，规则改动附测试）：
+  - 三层边界静态护栏改为**全目录扫描**：core 全部文件断言 `from 'cc'`/`wx.`，presentation 全部文件断言 `wx.`（平台访问只走 platform 适配器）。
+  - `advanceDay` 结局改为 `nextDay > GAME_DAYS`（玩满第 10 天）；守卫对 day==10 且 ending==null 的存档兜底补 `survived`（`SURVIVED_ENDING` 导出），杜绝永久卡死；`FINAL_DAY_INDEX` 删除。
+  - EventOutcome 新增 `recruit` 后果（救助 → 幸存者加入 `state.survivors`，职业取自事件表）；`survivor_call` 救助选项改用之；`ambush` 反击选项 damage 化并真实置 `vehicleDamaged`（防护减免路径从此有真实触发者）。
+  - 存档键位单一登记处：`core/scenario.ts` 导出 `ALL_SAVE_KEYS`，「重新开始」遍历清档（含 PrototypeScene 的 `trunk.v1`）。
+  - driving/returning 相位载入时回退地图（油弹为已付成本，不二次结算）；`atNode` 重建面板不变。
+  - `LOOT_DRAW_MAX` 6→5（互斥抽取上限即物品种类数，6 不可达）；`DANGER_STEP` 替换 advanceDay 里的硬编码 +1，删除无消费者的 `DAILY_FUEL_IDLE_COST`；`canAffordTrip` 的 range 恒真检查保留但显式注明占位语义；route 死三元化简；表现层两处 `as never` 收紧为 `isLootItemId` 守卫；`engines` 收紧 `>=22.18`（node 直跑 .ts 依赖 22.18+ 默认开启的 type stripping）。
+- **教训**：静态护栏的断言范围必须与文档承诺一致——「查了一个文件」和「查了整层」在文档里写出来是一样的，只有故意注入违规才能发现差距；规则语义（玩几天、救助有没有用）要以玩家视角复述一遍再对照实现，光看测试绿不绿发现不了「实现得很自洽但语义错了」的问题。

@@ -18,9 +18,10 @@ import type { LocationId } from './game.ts';
 export const LOOT_ITEM_IDS = ['food', 'medicine', 'fuel', 'material', 'ammo'] as const;
 export type LootItemId = (typeof LOOT_ITEM_IDS)[number];
 
-/** 抽取数量上下限（含两端）。 */
+/** 抽取数量上下限（含两端）。上限 5 = 物品种类数：抽取互斥（每类至多一张候选卡），
+ *  数值不可能超过 LOOT_ITEM_IDS.length，写 6 只是不可达的空头数字。 */
 export const LOOT_DRAW_MIN = 4;
-export const LOOT_DRAW_MAX = 6;
+export const LOOT_DRAW_MAX = 5;
 
 // 权重默认值：guaranteed > lean > 其它资源。
 const WEIGHT_GUARANTEED = 6;
