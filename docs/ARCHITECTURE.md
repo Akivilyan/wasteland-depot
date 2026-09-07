@@ -80,7 +80,7 @@ assets/scripts/platform/      平台适配
 | 能力 | 来源 |
 | --- | --- |
 | 本地存档 | `wx.setStorageSync` / `localStorage`（已有 `platform/storage.ts`） |
-| 激励视频广告 | `wx.createRewardedVideoAd`（广告须玩家主动触发，底线见 [GAME_SKELETON.md](GAME_SKELETON.md) 第 11 节） |
+| 激励视频广告 | `wx.createRewardedVideoAd`（广告须玩家主动触发，底线见 [GAME_SKELETON.md](GAME_SKELETON.md) 第 13 节） |
 | 分享 / 登录 / 排行榜关系链 | `wx.shareAppMessage` / 微信登录 / 开放数据域 |
 | UI 列表、滚动、布局、按钮、进度条 | Cocos `Layout` / `ScrollView` / `Button` / `ProgressBar` |
 | 轻量动画（按钮反馈、物品移动、格子高亮） | Cocos `Tween` / `Animation` |
