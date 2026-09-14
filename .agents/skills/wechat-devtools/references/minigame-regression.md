@@ -1,6 +1,8 @@
-# Canvas 小游戏回归链路（automator 失效后的现行方案）
+# Canvas 小游戏回归链路（历史实证记录）
 
-> 本文是历史实证记录（失效实验、坐标校准细节）；**现行方案的日常使用以 [SKILL.md「Canvas 小游戏回归链路」节](../SKILL.md) 为权威出处**，两者内容同源，更新时先改 SKILL.md。
+> 本文是历史实证记录（失效实验、坐标校准细节）。**权威出处已于 2026-09-14 迁至项目侧**：
+> [wasteland-depot-dev/references/minigame-regression.md](../../wasteland-depot-dev/references/minigame-regression.md)；
+> MCP skill 主文件只留指路卡。更新时改项目侧那份，本文件不再维护。
 
 适用：Cocos 导出的微信**小游戏**（canvas 渲染、无 DOM）。普通小程序 DOM 页面仍走 automator 正常流程，不在此列。
 
