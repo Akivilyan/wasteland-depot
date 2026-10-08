@@ -32,7 +32,7 @@ assets/scripts/platform/      平台适配
 | 文件 | 职责 | 关键导出 |
 | --- | --- | --- |
 | `rng.ts` | 可种子随机源（Mulberry32），规则层所有随机的唯一入口 | `createRng`, `Rng` |
-| `constants.ts` | **唯一允许出现玩法数字的地方**；初始资源、车辆、危险度、油耗、道路事件概率等默认值 | `GAME_DAYS`, `STARTING_RESOURCES`, `VEHICLE_DEFAULT`, `MAX_DANGER`, `LEG_FUEL_PER_10KM`, `ROAD_EVENT_CHANCE` … |
+| `constants.ts` | **玩法常量与默认值的集中处**（结构化数据在 `game.ts`、抽取权重在 `loot.ts`）；初始资源、车辆、危险度、油耗、道路事件概率等默认值 | `GAME_DAYS`, `STARTING_RESOURCES`, `VEHICLE_DEFAULT`, `MAX_DANGER`, `LEG_FUEL_PER_10KM`, `ROAD_EVENT_CHANCE` … |
 | `game.ts` | 玩法数据与装配：五种资源、六个地点、四种职业、事件表与后果结算（gain/lose/damage/reveal/**recruit**） | `RESOURCES`, `LOCATIONS`, `PROFESSIONS`, `createGameConfig`, `pickEvent`, `applyOutcome` |
 | `sim.ts` | 十日核心循环引擎：出发/道路事件/装车/返程/推进一天，全部纯函数；出发油耗用 route 里程模型。事件拆为「抽取」与「结算」两命令；recruit 后果招募幸存者、damage 后果置 `vehicleDamaged` | `createInitialGameState`, `startTrip`, `drawRoadEvent`, `resolveEvent`, `loadCargo`, `returnHome`, `cargoFromTrunk`, `advanceDay`, `SURVIVED_ENDING` |
 | `scenario.ts` | GameState 的存档编解码与**全部存档键位登记**（底层存储复用 platform） | `SAVE_KEY`, `ALL_SAVE_KEYS`, `encodeGameState`, `decodeGameState` |
@@ -41,7 +41,7 @@ assets/scripts/platform/      平台适配
 | `loot.ts` | 切片 004：按地点倾向加权抽取候选物资；装舱语义全部复用 trunk | `rollNodeLoot`, `takeLoot`, `putBackLoot`, `buildLootWeights`, `encode/decodeLootState` |
 | `prototype-state.ts` | 切片 001 的三槽后备箱探针，**已被 trunk.ts 取代**；现仅留作最小边界样本（被 verify 脚本与自身测试引用），表现层不再使用 | `createInitialState`, `placeItem` |
 
-> 数据默认值集中在 `constants.ts`；`game.ts` 也承载地点/事件/职业等**结构化数据**。拍板待决策项时，优先只改这两处（见 [PENDING_DECISIONS.md](PENDING_DECISIONS.md)）。
+> **数据默认值集中在 `constants.ts`；`game.ts` 承载地点/事件/职业等结构化数据，`loot.ts` 承载抽取权重**。拍板待决策项时，优先只改这三处（见 [PENDING_DECISIONS.md](PENDING_DECISIONS.md)）。
 
 ### 表现层 `assets/scripts/presentation/`
 

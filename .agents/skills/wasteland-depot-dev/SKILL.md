@@ -24,7 +24,7 @@ The authoritative, current definition of the layering, per-file responsibilities
 - Keep the first prototype 2D and portrait. Do not add 3D, a physics engine, skeletal animation, networking, or a third-party runtime without a demonstrated need (ADR-001).
 - The engine stays Cocos Creator 3.8.8. Do not propose rebuilding the project or upgrading Cocos: the white-screen/deprecated-API fallout comes from the vendored WeChat adapter template and is not eliminated by either (ADR-001/002) — remediation is the post-build patch script.
 - Ads must remain optional and user-initiated (product baseline in `docs/GAME_SKELETON.md` §13). Do not add banners, splash ads, forced interstitials, or progression tuned to manufacture ad pain.
-- Gameplay numbers live only in `core/constants.ts` (and structured data in `core/game.ts`). When a pending decision lands, change those two files first.
+- Gameplay numbers live in `core/constants.ts`; structured data in `core/game.ts`; loot weights in `core/loot.ts`. When a pending decision lands, change those files first.
 
 ## Work through repeatable commands
 
