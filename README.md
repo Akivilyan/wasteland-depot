@@ -43,8 +43,7 @@ docs/             设计与决策文档（见下）
 | --- | --- |
 | [docs/GAME_SKELETON.md](docs/GAME_SKELETON.md) | 游戏愿景、核心循环、内容边界、广告底线、停车场（**游戏是什么**） |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 三层边界、文件职责、存档键位、复用清单（**代码怎么组织**，权威出处） |
-| [docs/DECISIONS.md](docs/DECISIONS.md) | 已确认的技术/产品决策记录（ADR，**为什么这么定**） |
-| [docs/VERIFY_CADENCE.md](docs/VERIFY_CADENCE.md) | 验证分层（T0~T3）与触发时机、阶段审核、任务卡规范、架构师/执行工分工（**何时跑哪层验证**，权威出处） |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | 已确认的技术/产品决策记录（ADR，**为什么这么定**） || [docs/VERIFY_CADENCE.md](docs/VERIFY_CADENCE.md) | 验证分层（T0~T3）与触发时机、阶段审核、任务卡规范、架构师/执行工分工（**何时跑哪层验证**，权威出处） |
 | [docs/PENDING_DECISIONS.md](docs/PENDING_DECISIONS.md) | 待财哥/丧彪拍板的产品项与当前默认值 |
 | [docs/INVENTORY_DESIGN.md](docs/INVENTORY_DESIGN.md) | 车辆货舱占格交互设计提案 |
 | [docs/SLICE_00X_*.md](docs/) | 各开发切片的目标、范围、验证结果与人工验收状态 |
@@ -66,7 +65,7 @@ Agent 工作守则（命令、环境、回归方式）在 `.agents/skills/wastel
 | [SLICE_005](docs/SLICE_005_GAME_LOOP.md) | 行程打通十日循环 GameState：扣油弹/入库/推进一天/危险度/结局重开 | ✅ 65 测试 + 双端 + 模拟器真实点击全链路 | ✅ 已通过（同上） |
 | [SLICE_006](docs/SLICE_006_ROAD_EVENTS.md) | 道路事件接入行车途中：卷轴暂停 → 事件面板 → 选择后果落 GameState → 恢复；首次接入命令行类型检查（ADR-007） | ✅ 71 测试 + 类型检查 + 双端 + 模拟器真实点击两趟事件 | ✅ 已通过（同上） |
 
-旧骨架（十日 × 六地点单线）的核心循环已全部打通。游戏设计已切换为**区域制长局模型**（[GAME_SKELETON.md](docs/GAME_SKELETON.md) 第七版，ADR-010~021）：十日循环 → 长局与波次、六地点单线 → 区域制与解锁（**6 区域 + 市中心，D2 定稿：食品厂/炼油厂/制药厂/军工厂/工业园/购物中心，六区统一外围/内部/核心三层、三按钮选择 UI**）、职业数据 → 主角天赋制、自动战斗 → 竖版定点实时射击（弹药实时消耗+撞线自毁潮水制）、失败线收敛为全员濒死、工作台与图纸制作玩法砍除（科技树重构）、信号零件改核心层 NPC 任务专属（去字母命名）、事件节点数随玩家意愿松绑（构成 5:2:2、boss 尾端收口）、储物/载客去档位改梯度成本、软结局「信号强度」+ 首波起算口径定案。核心层参数化改造与区域制地图为下阶段工作；待拍板项见 [PENDING_DECISIONS.md](docs/PENDING_DECISIONS.md)。
+旧骨架（十日 × 六地点单线）的核心循环已全部打通。游戏设计已切换为**区域制长局模型**（[GAME_SKELETON.md](docs/GAME_SKELETON.md) 第八版，ADR-010~022）：十日循环 → 长局与波次、六地点单线 → 区域制与解锁（**6 区域 + 市中心，D2 定稿：食品厂/炼油厂/制药厂/军工厂/工业园/购物中心，六区统一外围/内部/核心三层、三按钮选择 UI**）、职业数据 → 主角天赋制、自动战斗 → 竖版定点实时射击（弹药实时消耗+撞线自毁潮水制）、失败线收敛为全员濒死、信号零件改**特定核心 boss 首杀专属**（每区每层 1 boss、只刷一次，地图同样由 boss 首杀掉落）、任务系统标准化（接任务→任务板交付→付费入队，两笔分开）、探索日换算定案（去程 1 天+每节点 1 天+返程 1 天）、终局改 10 天倒计时+无限弹药最终决战、储物/载客去档位改梯度成本、软结局「信号强度」+ 首波起算口径定案。核心层参数化改造与区域制地图为下阶段工作；待拍板项见 [PENDING_DECISIONS.md](docs/PENDING_DECISIONS.md)。
 
 > 2026-09-03 全项目评审修订（详见 [DECISIONS.md](docs/DECISIONS.md) ADR-008）：结局时机改为玩满第 10 天；幸存者求救事件救助后真实招募；damage 后果真实置车辆损坏；「重新开始」清全部存档键；三层边界静态护栏覆盖全部源文件；driving/returning 中断后回退地图。当前 76 测试。
 
