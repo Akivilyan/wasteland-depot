@@ -20,7 +20,7 @@ npm run wechat:preview # 生成真机预览二维码
 
 本机路径可用 `COCOS_CREATOR_BIN`、`WECHAT_DEVTOOLS_CLI` 覆盖。Cocos 命令行构建需要 macOS 图形会话；微信 CLI 需先在开发者工具「设置 → 安全设置 → 服务端口」打开开关。类型检查依赖 Cocos 编辑器生成的 `temp/declarations`（编辑器打开过项目一次即可；未生成时 typecheck 自动跳过）。
 
-测试：`npm test`（node 原生 `--test`，直接 import `assets/scripts/core/*.ts`，当前 76 个用例全绿）。
+测试：`npm test`（node 原生 `--test`，直接 import `assets/scripts/core/*.ts`，当前 38 个用例全绿——区域制模型；旧十日模型测试随 SLICE_009 退役）。
 
 ## 目录结构
 
@@ -66,6 +66,7 @@ Agent 工作守则（命令、环境、回归方式）在 `.agents/skills/wastel
 | [SLICE_006](docs/SLICE_006_ROAD_EVENTS.md) | 道路事件接入行车途中：卷轴暂停 → 事件面板 → 选择后果落 GameState → 恢复；首次接入命令行类型检查（ADR-007） | ✅ 71 测试 + 类型检查 + 双端 + 模拟器真实点击两趟事件 | ✅ 已通过（同上） |
 | [SLICE_007](docs/SLICE_007_REGIONAL_CORE.md) | 核心层区域制改造：GameState v2 长局模型（区域/层/节点流/保底/波次日历/五资源上限/NPC/终局）纯规则层落地，旧十日模型退役中 | ✅ 107 测试 + 类型检查 + 边界护栏 | —（纯规则层，无表现改动） |
 | [SLICE_008](docs/SLICE_008_REGIONAL_MAP_UI.md) | 区域制主场景 RegionalScene（四选一/仓库 HUD/大地图/三按钮层选择/探索占位/返程/存档），替换旧场景挂载 | ✅ verify 全绿 + 微信构建 + CDP 冒烟（挂载/状态流转/0 异常） | 待切片 009 卷轴接入后一并人工验收 |
+| [SLICE_009](docs/SLICE_009_JOURNEY_CLEANUP.md) | 横轴卷轴接入探索屏（RegionJourney 视差演出+六区氛围色）；删除旧十日模型全部文件（core 五件/表现层三件/旧测试），代码库单一模型 | ✅ verify 全绿（38 测试）+ 微信构建 + CDP 全链冒烟（地图→出发→卷轴→节点结算） | 卷轴手感待人工过目 |
 
 旧骨架（十日 × 六地点单线）的核心循环已全部打通。游戏设计已切换为**区域制长局模型**（ADR-010~023，现行设计见 [GAME_DESIGN.md](docs/GAME_DESIGN.md)）：长局与波次、区域制与解锁（6 区域 + 市中心，六区统一外围/内部/核心三层）、主角四流派天赋制、竖版定点实时射击（弹药实时消耗+撞线自毁潮水制）、失败线收敛为全员濒死、信号零件特定核心 boss 首杀专属、标准任务系统、终局 10 天倒计时+无限弹药最终决战。**2026-10-24 起（ADR-023）丧彪全权接手设计与实现**，核心层参数化改造与区域制地图为下阶段工作，开发按切片推进、每切片独立可验证。
 

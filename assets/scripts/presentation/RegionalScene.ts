@@ -48,16 +48,17 @@ import {
   type NodeResult,
   type NodeEncounter,
 } from '../core/run.ts';
-import { ALL_SAVE_KEYS } from '../core/scenario.ts';
 import {
   type GameState,
   encodeGameState,
   decodeGameState,
   RUN_SAVE_KEY,
+  ALL_SAVE_KEYS,
 } from '../core/state.ts';
 import { holdTotals } from '../core/hold.ts';
 import { SLOT_CAP } from '../core/config.ts';
 import { createStoragePort, type StoragePort } from '../platform/storage.ts';
+import { RegionJourney, REGION_PALETTES, DEFAULT_PALETTE } from './RegionJourney.ts';
 import {
   COLOR_TEXT,
   COLOR_DIM,
@@ -91,6 +92,7 @@ export class RegionalScene extends Component {
   private state: GameState | null = null;
   private rng: Rng = createRng(20261024);
   private root: Node | null = null;
+  private journey: RegionJourney | null = null;
   private toast: { label: ReturnType<typeof createLabel> } | null = null;
   /** 待继续的节点结果（节点弹层关闭后回到探索屏）。 */
   private pendingNode: NodeResult | null = null;
@@ -127,6 +129,7 @@ export class RegionalScene extends Component {
 
   private newScreen(name: string): Node {
     this.root?.destroy();
+    this.journey = null;
     this.root = new Node(name);
     this.root.setParent(this.node);
     createBackdrop(this.root, `${name}Bg`, DESIGN_WIDTH, DESIGN_HEIGHT);
@@ -347,29 +350,38 @@ export class RegionalScene extends Component {
 
   private buildExpedition(): void {
     const state = this.state;
-    if (state?.expedition === null || state === null) return;
+    if (state === null || state.expedition === null) return;
     const expedition = state.expedition;
     const screen = this.newScreen('Expedition');
     const def = regionDef(expedition.region);
 
-    createLabel(screen, 'Head', `${def.label} · ${TIER_LABELS[expedition.tier]}层`, 0, 610, 32, COLOR_TEXT);
-    createLabel(
-      screen,
-      'Status',
-      `第 ${state.day} 天 · 本程第 ${expedition.nodesVisitedThisTrip} 个节点 · 燃油 ${state.stock.fuel}`,
-      0,
-      556,
-      24,
-      COLOR_DIM,
-    );
+    // 横轴卷轴为底（SLICE_003 手感资产的区域制版本）
+    this.journey = new RegionJourney(screen, REGION_PALETTES[expedition.region] ?? DEFAULT_PALETTE);
+    this.journey.setInfo({
+      title: `${def.label} · ${TIER_LABELS[expedition.tier]}层`,
+      subtitle: `第 ${state.day} 天 · 本程第 ${expedition.nodesVisitedThisTrip} 个节点 · 燃油 ${state.stock.fuel}`,
+    });
 
-    // 货舱网格（4 列）
+    // 悬浮操作排（在卷轴之上）
+    createButton(screen, 'HoldBtn', '货舱', -250, -560, () => this.showHoldLayer(), { width: 200, height: 88, fontSize: 24 });
+    createButton(screen, 'AdvanceBtn', '推进下一节点', 0, -560, () => this.onAdvance(), { width: 280, height: 96, fontSize: 26 });
+    createButton(screen, 'ReturnBtn', '返程回仓', 250, -560, () => this.onReturnHome(), { width: 200, height: 88, fontSize: 24, color: COLOR_WARNING });
+
+    if (expedition.forcedReturn) {
+      const banner = createPanel(screen, 'ForcedBanner', 0, 460, 700, 64, COLOR_DANGER, 10);
+      createLabel(banner, 'Label', '车辆打空 / 油尽——必须返程', 0, 0, 24, COLOR_TEXT, 660);
+    }
+  }
+
+  /** 货舱弹层（网格只读查看 + 关闭）。 */
+  private showHoldLayer(): void {
+    const state = this.state;
+    if (state === null || state.expedition === null) return;
+    const expedition = state.expedition;
+    const layer = createBackdrop(this.root as Node, 'HoldLayer', DESIGN_WIDTH, DESIGN_HEIGHT, OVERLAY);
+    const panel = createPanel(layer, 'HoldPanel', 0, 0, 680, 900);
+    createLabel(panel, 'Title', `货舱（${expedition.hold.slots.length}/${state.vehicle.slots} 格）`, 0, 380, 30, COLOR_TEXT);
     const slots = state.vehicle.slots;
-    const rows = Math.ceil(slots / 4);
-    const cellW = 150;
-    const cellH = 110;
-    const gridTop = 380;
-    createLabel(screen, 'HoldTitle', `货舱（${expedition.hold.slots.length}/${slots} 格）`, 0, gridTop + 60, 24, COLOR_DIM);
     const holdBySlot = new Map<number, { resource: ResourceId; amount: number }>();
     expedition.hold.slots.forEach((slot, i) => {
       holdBySlot.set(i, { resource: slot.resource, amount: slot.amount });
@@ -377,40 +389,33 @@ export class RegionalScene extends Component {
     for (let i = 0; i < slots; i++) {
       const col = i % 4;
       const row = Math.floor(i / 4);
-      const x = -225 + col * cellW;
-      const y = gridTop - row * cellH;
+      const x = -225 + col * 150;
+      const y = 280 - row * 110;
       const entry = holdBySlot.get(i);
       if (entry === undefined) {
-        createPanel(screen, `Slot${i}`, x, y, cellW - 12, cellH - 14, COLOR_PANEL_DARK, 8);
+        createPanel(panel, `Slot${i}`, x, y, 138, 96, COLOR_PANEL_DARK, 8);
       } else {
-        const cell = createPanel(screen, `Slot${i}`, x, y, cellW - 12, cellH - 14, RESOURCE_COLORS[entry.resource], 8);
-        createLabel(cell, 'Res', resourceLabel(entry.resource), 0, 14, 20, COLOR_TEXT, cellW - 30);
-        createLabel(cell, 'Amt', `${entry.amount}/${SLOT_CAP[entry.resource]}`, 0, -18, 24, COLOR_TEXT, cellW - 30);
+        const cell = createPanel(panel, `Slot${i}`, x, y, 138, 96, RESOURCE_COLORS[entry.resource], 8);
+        createLabel(cell, 'Res', resourceLabel(entry.resource), 0, 16, 18, COLOR_TEXT, 126);
+        createLabel(cell, 'Amt', `${entry.amount}/${SLOT_CAP[entry.resource]}`, 0, -14, 22, COLOR_TEXT, 126);
       }
     }
-
-    // 乘员血量
-    const away = state.members.filter((m) => !m.dying);
-    createLabel(
-      screen,
-      'Crew',
-      `随行：${away.map((m) => `${m.name} ${m.hp}`).join(' · ') || '无人随行'}`,
-      0,
-      gridTop - rows * cellH - 40,
-      22,
-      COLOR_DIM,
-    );
-
-    createButton(screen, 'AdvanceBtn', '推进下一节点', 0, -320, () => this.onAdvance(), { width: 460, height: 96, fontSize: 30 });
-    createButton(screen, 'ReturnBtn', '返程回仓', 0, -450, () => this.onReturnHome(), { width: 460, height: 84, fontSize: 26, color: COLOR_WARNING });
-
-    if (expedition.forcedReturn) {
-      const banner = createPanel(screen, 'ForcedBanner', 0, 500, 700, 64, COLOR_DANGER, 10);
-      createLabel(banner, 'Label', '车辆打空 / 油尽——必须返程', 0, 0, 24, COLOR_TEXT, 660);
-    }
+    createButton(panel, 'CloseBtn', '关闭', 0, -400, () => layer.destroy(), { width: 280, height: 80, color: COLOR_PANEL_DARK });
   }
 
   private onAdvance(): void {
+    const state = this.state;
+    if (state === null || state.expedition === null) return;
+    if (this.journey !== null && this.journey.isBusy) return;
+    const runNode = (): void => this.resolveNextNode();
+    if (this.journey !== null) {
+      this.journey.playLeg(runNode, false);
+    } else {
+      runNode();
+    }
+  }
+
+  private resolveNextNode(): void {
     const state = this.state;
     if (state === null || state.expedition === null) return;
     const result = nextNode(state, this.rng);
@@ -536,6 +541,18 @@ export class RegionalScene extends Component {
   // —— 返程 ——
 
   private onReturnHome(): void {
+    const state = this.state;
+    if (state === null || state.expedition === null) return;
+    if (this.journey !== null && this.journey.isBusy) return;
+    const settle = (): void => this.settleReturn();
+    if (this.journey !== null) {
+      this.journey.playLeg(settle, true);
+    } else {
+      settle();
+    }
+  }
+
+  private settleReturn(): void {
     const state = this.state;
     if (state === null) return;
     const result = endExpedition(state);

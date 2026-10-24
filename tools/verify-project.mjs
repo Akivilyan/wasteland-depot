@@ -7,7 +7,7 @@ const read = (path) => readFile(resolve(projectRoot, path), 'utf8');
 
 const [sceneText, scriptMetaText, platformText, engineSettingsText, coreTexts, presentationTexts] = await Promise.all([
   read('assets/scenes/Prototype.scene'),
-  read('assets/scripts/presentation/PrototypeScene.ts.meta'),
+  read('assets/scripts/presentation/RegionalScene.ts.meta'),
   read('assets/scripts/platform/storage.ts'),
   read('settings/v2/packages/engine.json'),
   readDirTs('assets/scripts/core'),
@@ -24,7 +24,7 @@ async function readDirTs(dir) {
 
 const scene = JSON.parse(sceneText);
 const scriptMeta = JSON.parse(scriptMetaText);
-assert.equal(scriptMeta.uuid, '6b9c302e-2c38-4bd9-a582-d9450af15460');
+assert.equal(scriptMeta.uuid, '8b5c14c4-07df-4016-bb7d-470b71a14e25');
 assert.ok(scene.some((entry) => entry.__type__ === '8b5c1TEB99AFrt9RwtxoU4l'), 'RegionalScene component is not attached');
 
 // 三层边界（ARCHITECTURE 第 1 节）对全目录强制，不只查探针文件：

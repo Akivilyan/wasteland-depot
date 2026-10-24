@@ -95,6 +95,18 @@ export interface GameState {
 
 export const RUN_SAVE_KEY = 'wasteland-depot.run.v2';
 
+/** 项目全部存档键位（ARCHITECTURE 第 3 节的单一出处）。
+ *  「重新开始」清档、存档迁移、排查工具都以此遍历，避免新增键时漏清。
+ *  v1 五键是旧十日模型的档位：只剩清档语义，编解码已随旧模型退役。 */
+export const ALL_SAVE_KEYS: readonly string[] = [
+  RUN_SAVE_KEY,
+  'wasteland-depot.save.v1',
+  'wasteland-depot.trunk.v1',
+  'wasteland-depot.trip.v1',
+  'wasteland-depot.loot.v1',
+  'wasteland-depot.trip-trunk.v1',
+];
+
 export function encodeGameState(state: GameState): string {
   return JSON.stringify(state);
 }

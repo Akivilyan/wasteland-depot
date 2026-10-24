@@ -44,7 +44,7 @@ assets/scripts/platform/      平台适配
 | `state.ts` | GameState v2（长局）与存档编解码 | `GameState`, `RUN_SAVE_KEY`, `encodeGameState` |
 | `run.ts` | **命令引擎唯一入口**：出发/节点/返程/日结/升级/修理/医疗/任务/招募/守家/终局 | `createNewGame`, `startExpedition`, `nextNode`, `endExpedition`, `applyExpeditionBattle`, `applyHomeBattle` … |
 
-**旧十日模型（退役中，表现层切换后删除）**：`sim.ts`/`game.ts`/`route.ts`/`loot.ts`/`constants.ts`（v1）/`scenario.ts`（v1 存档键登记保留）/`prototype-state.ts`。
+**旧十日模型已删除（SLICE_009，2026-10-24）**：sim/game/route/loot/trunk/prototype-state/constants(v1)/scenario 与表现层 PrototypeScene/TravelScene/TrunkGrid 一并退役；六切片验证的手感资产由区域制继承（占格→hold、卷轴→RegionJourney、事件面板→节点弹层、五资源账目→config）。历史知识见 git 与 SLICE_001~006 文档。
 
 > **数据默认值集中**：区域制数值在 `config.ts`（+`regions.ts`/`events.ts` 结构化数据）；调参只改这三处 + 本文（数值真源见 [GAME_DESIGN.md](GAME_DESIGN.md)）。
 
@@ -52,9 +52,9 @@ assets/scripts/platform/      平台适配
 
 | 文件 | 职责 |
 | --- | --- |
-| `PrototypeScene.ts` | 挂在 `Prototype.scene` 的主组件；货舱原型界面（4×3 网格 + 候选卡 + 清空），读写 `trunk.v1` |
-| `TravelScene.ts` | 切片 003/004/005/006：地图选点、横轴行车卷轴演出、**行车途中道路事件面板**（draw→暂停卷轴→选择→resolve→恢复）、节点抵达面板（候选物资 + 装舱）、返程抵仓结算（returnHome + advanceDay）、十日 GameState 的载入/持久化与结局面板；与 PrototypeScene 同场景共存（Travel 覆盖其上）。行车段计时全部走 tween（scheduleOnce 不随 tween 暂停），事件弹出时整组 pause/resume |
-| `TrunkGrid.ts` | 切片 004 抽出的可复用 4×3 货舱网格（绘制 + 点选放置 + 高亮/闪烁）；PrototypeScene 与 TravelScene 共用，规则全部来自 `core/trunk.ts`，通过 `onChange` 回传新状态 |
+| `RegionalScene.ts` | 挂在 `Prototype.scene` 的主场景组件（唯一挂载）：四选一 → 仓库 HUD → 大地图 → 三按钮层选择 → 探索（卷轴 + 节点弹层）→ 返程结算 → 终局画面；run.v2 存档读写、重开清 ALL_SAVE_KEYS；守家/终局暂为占位快速结算（SLICE_011 换实时战斗） |
+| `RegionJourney.ts` | 横轴卷轴演出器：视差双滚动 + 车辆颠簸 + 六区氛围色 + 跳过；`playLeg(onDone, returning)`，跳过同样继续流程 |
+| `ui-kit.ts` | 共用 UI 辅助：label/panel/button/bar/配色（表现层不写规则） |
 
 ### 平台层 `assets/scripts/platform/`
 
@@ -64,17 +64,14 @@ assets/scripts/platform/      平台适配
 
 ## 3. 存档键位
 
-全部走 `platform/storage.ts`，规则层只负责编解码。**键位的唯一登记处是 `core/scenario.ts` 的 `ALL_SAVE_KEYS`**（清档/迁移/排查工具遍历它，新增存档键必须在此登记）。
+全部走 `platform/storage.ts`，规则层只负责编解码。**键位的唯一登记处是 `core/state.ts` 的 `ALL_SAVE_KEYS`**（清档/迁移/排查工具遍历它，新增存档键必须在此登记）。
 
 | 键 | 内容 | 编解码 | 读写方 |
 | --- | --- | --- | --- |
-| `wasteland-depot.save.v1` | 十日循环 GameState（sim） | `scenario.ts` | TravelScene（SLICE_005 起） |
-| `wasteland-depot.trunk.v1` | 货舱原型布局（trunk） | `trunk.ts` | PrototypeScene |
-| `wasteland-depot.trip.v1` | 行程相位（route） | `route.ts` | TravelScene |
-| `wasteland-depot.loot.v1` | 节点候选物资会话（loot） | `loot.ts` | TravelScene |
-| `wasteland-depot.trip-trunk.v1` | 节点装舱中的货舱（trunk） | `trunk.ts` | TravelScene |
+| `wasteland-depot.run.v2` | 区域制长局 GameState（含探索会话） | `state.ts` | RegionalScene |
+| v1 五键（save/trunk/trip/loot/trip-trunk） | 旧十日模型档位，**只剩清档语义** | 已随旧模型删除 | —（清档遍历 ALL_SAVE_KEYS） |
 
-非法/损坏数据一律回退到初始空态，不抛错中断。行程相位恢复策略：`atNode` 重建节点面板；`driving`/`returning` 无法恢复演出中途，回退到地图重新选点（油弹为本次外出已付成本，不二次结算）。
+非法/损坏数据一律回退到初始空态，不抛错中断。探索会话内嵌 GameState（无半死相位）：载入后回到当前节点面板继续。
 
 ## 4. 复用官方能力，不重复造轮子
 
