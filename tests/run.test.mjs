@@ -34,6 +34,8 @@ import {
   tierSum,
   ladderCost,
   isLayerUnlocked,
+  isRecruited,
+  upgradeCost,
 } from '../assets/scripts/core/run.ts';
 import {
   encodeGameState,
@@ -201,6 +203,15 @@ test('npc encounter records quest by tier depth; submit consumes stock; recruit 
   // 座位满（2 座 2 人）：拒绝再招
   const blocked = recruitNpc({ ...recruited.state, npcQuestsDone: [...recruited.state.npcQuestsDone, 'food-2'], npcQuests: { ...recruited.state.npcQuests, 'food-2': { resource: 'food', amount: 10 } } }, 'food-2', 'resource');
   assert.match(blocked.message, /座位不足/);
+  // isRecruited：入队前后各查一次（任务板渲染查询）
+  assert.equal(isRecruited(submitted.state, 'food-1'), false);
+  assert.equal(isRecruited(recruited.state, 'food-1'), true);
+});
+
+test('upgradeCost: captain gets 25% off rounded up; others pay face value', () => {
+  assert.equal(upgradeCost(newGame('captain'), 30), 23);
+  assert.equal(upgradeCost(newGame('stark'), 30), 30);
+  assert.equal(upgradeCost({ ...newGame('captain'), hero: null }, 41), 41);
 });
 
 // —— 战斗结算 ——

@@ -734,8 +734,14 @@ export function applyFinalBattle(state: GameState, outcome: { victory: boolean; 
 // —— 仓库命令（升级/修理/医疗/任务板，§6/§8）——
 
 /** 队长升级折扣 -25%（向上取整）。 */
-function upgradeCost(state: GameState, base: number): number {
+export function upgradeCost(state: GameState, base: number): number {
   return state.hero === 'captain' ? Math.ceil(base * 0.75) : base;
+}
+
+/** NPC 是否已入队（成员按名匹配 NPC 表；任务板渲染用）。 */
+export function isRecruited(state: GameState, npcId: string): boolean {
+  const name = npcDef(npcId).name;
+  return state.members.some((m) => m.name === name);
 }
 
 function trySpend(state: GameState, material: number): { state: GameState; ok: boolean } {

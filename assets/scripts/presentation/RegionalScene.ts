@@ -46,6 +46,21 @@ import {
   wallHpCap,
   isLayerUnlocked,
   rocketBattleLimit,
+  upgradeStockCap,
+  upgradeWallHp,
+  upgradeVehicleDurability,
+  upgradeWeapon,
+  buySlot,
+  buySeat,
+  repair,
+  healMember,
+  useSerum,
+  submitQuest,
+  recruitNpc,
+  ladderCost,
+  upgradeCost,
+  isRecruited,
+  type CmdResult,
   type NodeResult,
   type NodeEncounter,
 } from '../core/run.ts';
@@ -57,7 +72,26 @@ import {
   ALL_SAVE_KEYS,
 } from '../core/state.ts';
 import { holdTotals } from '../core/hold.ts';
-import { SLOT_CAP } from '../core/config.ts';
+import {
+  SLOT_CAP,
+  GUN_DAMAGE,
+  ROCKET_DAMAGE,
+  STOCK_CAP_BASE,
+  STOCK_CAP_PER_LEVEL,
+  STOCK_UPGRADE_COSTS,
+  WALL_HP_LEVELS,
+  WALL_UPGRADE_COSTS,
+  VEHICLE_DURABILITY_LEVELS,
+  VEHICLE_DURABILITY_COSTS,
+  WEAPON_UPGRADE_COSTS,
+  SLOT_LADDER,
+  SEAT_LADDER,
+  STORAGE_SLOTS_BASE,
+  SEATS_BASE,
+  REPAIR_PER_MATERIAL,
+  RECRUIT_RESOURCE_COST,
+  RECRUIT_FOOD_COST,
+} from '../core/config.ts';
 import { waveComposition } from '../core/combat.ts';
 import { BattleStage, type BattleStageOptions, type BattleReport } from './BattleStage.ts';
 import { createStoragePort, type StoragePort } from '../platform/storage.ts';
@@ -69,6 +103,7 @@ import {
   COLOR_WARNING,
   COLOR_DISABLED,
   COLOR_PRIMARY,
+  COLOR_PANEL,
   COLOR_PANEL_DARK,
   RESOURCE_COLORS,
   createLabel,
@@ -137,8 +172,10 @@ export class RegionalScene extends Component {
   }
 
   private showToast(message: string): void {
-    if (this.toast !== null && this.toast.label.node.isValid) {
-      this.toast.label.string = message;
+    // 旧 Toast 可能随 newScreen 销毁：跨帧后 label.node 被置 null，须先判空再验 isValid。
+    const existing = this.toast?.label;
+    if (existing !== undefined && existing !== null && existing.node !== null && existing.node.isValid) {
+      existing.string = message;
       return;
     }
     const host = this.root ?? this.node;
@@ -199,15 +236,19 @@ export class RegionalScene extends Component {
       createRowLabel(screen, `Cap${id}`, `上限 ${cap}`, 220, y, 20, COLOR_DIM, 240);
     });
 
-    // 乘员
-    createLabel(screen, 'MemberTitle', `乘员（座位 ${state.members.length}/${state.vehicle.seats}）`, 0, 160, 24, COLOR_DIM);
-    state.members.forEach((member, i) => {
-      const y = 100 - i * 64;
+    // 乘员（主屏最多 5 行，完整列表在医疗面板）
+    createLabel(screen, 'MemberTitle', `乘员（座位 ${state.members.length}/${state.vehicle.seats}）`, 0, 180, 24, COLOR_DIM);
+    const shownMembers = state.members.slice(0, 5);
+    shownMembers.forEach((member, i) => {
+      const y = 120 - i * 60;
       const status = member.dying ? '濒死·驻留' : `${member.hp}/${member.hpCap}`;
       createRowLabel(screen, `Member${member.id}Name`, member.name, -320, y, 22, member.dying ? COLOR_DANGER : COLOR_TEXT, 200);
-      const bar = createBar(screen, `Member${member.id}Bar`, -60, y, 300, 26, member.hp / member.hpCap, member.dying ? COLOR_DANGER : COLOR_PRIMARY);
+      const bar = createBar(screen, `Member${member.id}Bar`, -60, y, 300, 24, member.hp / member.hpCap, member.dying ? COLOR_DANGER : COLOR_PRIMARY);
       createRowLabel(screen, `Member${member.id}Hp`, status, 260, y, 20, COLOR_DIM, 180);
     });
+    if (state.members.length > shownMembers.length) {
+      createLabel(screen, 'MemberMore', `…另有 ${state.members.length - shownMembers.length} 人（医疗面板查看）`, 0, -180, 18, COLOR_DIM);
+    }
 
     // 载具与围墙
     createLabel(
@@ -215,13 +256,36 @@ export class RegionalScene extends Component {
       'VehicleInfo',
       `战车耐久 ${state.vehicle.durability}/${vehicleDurabilityCap(state)} · 货舱 ${state.vehicle.slots} 格 · 围墙 ${state.wall.hp}/${wallHpCap(state)}`,
       0,
-      -180,
+      -235,
       22,
       COLOR_DIM,
     );
 
-    createButton(screen, 'DepartBtn', '出发探索', 0, -300, () => this.buildMap(), { width: 460, height: 96, fontSize: 32 });
-    createButton(screen, 'ResetBtn', '重新开始', 0, -430, () => this.resetAll(), { width: 300, height: 72, fontSize: 24, color: COLOR_PANEL_DARK });
+    // 仓库功能入口（GDD §6：全部操作 ≤2 跳）——有待办时按钮变色（牌面即真相）
+    const hasDying = state.members.some((m) => m.dying);
+    const questNpcIds = Object.keys(state.npcQuests);
+    const hasDeliverable = questNpcIds.some(
+      (id) => !state.npcQuestsDone.includes(id) && state.stock[state.npcQuests[id]!.resource] >= state.npcQuests[id]!.amount,
+    );
+    const hasRecruitable = state.npcQuestsDone.some((id) => !isRecruited(state, id));
+    const entries: Array<{ name: string; text: string; color: Color; onClick: () => void }> = [
+      { name: 'UpgradeBtn', text: '升级', color: COLOR_PRIMARY, onClick: () => this.buildUpgradeLayer() },
+      {
+        name: 'RepairBtn',
+        text: '维修',
+        color: state.vehicle.durability < vehicleDurabilityCap(state) || state.wall.hp < wallHpCap(state) ? COLOR_WARNING : COLOR_PRIMARY,
+        onClick: () => this.buildRepairLayer(),
+      },
+      { name: 'MedicBtn', text: '医疗', color: hasDying ? COLOR_DANGER : COLOR_PRIMARY, onClick: () => this.buildMedicLayer() },
+      { name: 'QuestBtn', text: '任务板', color: hasDeliverable || hasRecruitable ? COLOR_WARNING : COLOR_PRIMARY, onClick: () => this.buildQuestLayer() },
+    ];
+    entries.forEach((entry, i) => {
+      const x = -261 + i * 174;
+      createButton(screen, entry.name, entry.text, x, -320, entry.onClick, { width: 166, height: 84, fontSize: 26, color: entry.color });
+    });
+
+    createButton(screen, 'DepartBtn', '出发探索', 0, -440, () => this.buildMap(), { width: 460, height: 96, fontSize: 32 });
+    createButton(screen, 'ResetBtn', '重新开始', 0, -555, () => this.resetAll(), { width: 300, height: 72, fontSize: 24, color: COLOR_PANEL_DARK });
 
     // 待处理战斗（占位快速结算，SLICE_010/011 换实时战斗）
     if (state.homeBattlePending) {
@@ -229,6 +293,273 @@ export class RegionalScene extends Component {
     } else if (state.finalePending) {
       this.buildPendingBattleLayer('最终决战——守住！', '迎战', () => this.startFinalBattle());
     }
+  }
+
+  // —— 仓库功能面板（升级/维修/医疗/任务板，GDD §6）——
+
+  /** 弹层骨架：遮罩 + 面板 + 标题 + 关闭；返回内容面板（调用方往里填行）。 */
+  private openLayer(layerName: string, title: string, width: number, height: number): Node {
+    const layer = createBackdrop(this.root as Node, layerName, DESIGN_WIDTH, DESIGN_HEIGHT, OVERLAY);
+    const panel = createPanel(layer, `${layerName}Panel`, 0, 0, width, height);
+    createLabel(panel, 'Title', title, 0, height / 2 - 60, 30, COLOR_TEXT);
+    createButton(panel, 'CloseBtn', '关闭', 0, -height / 2 + 60, () => layer.destroy(), { width: 240, height: 72, fontSize: 24, color: COLOR_PANEL_DARK });
+    return panel;
+  }
+
+  /** 面板内执行仓库命令：存档 → 刷新主屏 → 重开面板（数据牌面更新）→ toast。 */
+  private applyInLayer(command: () => CmdResult, reopen: () => void): void {
+    const result = command();
+    this.state = result.state;
+    this.save();
+    this.buildDepot();
+    reopen();
+    this.showToast(result.message);
+  }
+
+  /** 升级面板：科技树四线（储量/围墙/载具耐久/武器）+ 储物/载客扩容（§6）。 */
+  private buildUpgradeLayer(): void {
+    const state = this.state;
+    if (state === null) return;
+    const panel = this.openLayer('UpgradeLayer', '升级（材料施工）', 680, 1080);
+    createLabel(panel, 'Stock', `材料库存 ${state.stock.material}`, 0, 420, 22, COLOR_DIM);
+
+    const rows: Array<{
+      name: string;
+      status: string;
+      effect: string;
+      cost: number | null;
+      maxed: boolean;
+      run: () => CmdResult;
+    }> = [
+      {
+        name: '储量',
+        status: `Lv.${state.stockUpgradeLevel}/3`,
+        effect: `每种资源上限 ${STOCK_CAP_BASE + STOCK_CAP_PER_LEVEL * state.stockUpgradeLevel} → ${STOCK_CAP_BASE + STOCK_CAP_PER_LEVEL * (state.stockUpgradeLevel + 1)}`,
+        cost: state.stockUpgradeLevel < STOCK_UPGRADE_COSTS.length ? upgradeCost(state, STOCK_UPGRADE_COSTS[state.stockUpgradeLevel] as number) : null,
+        maxed: state.stockUpgradeLevel >= STOCK_UPGRADE_COSTS.length,
+        run: () => upgradeStockCap(this.state as GameState),
+      },
+      {
+        name: '围墙',
+        status: `Lv.${state.wall.level}/3`,
+        effect: `耐久上限 ${wallHpCap(state)} → ${state.wall.level < WALL_UPGRADE_COSTS.length ? (WALL_HP_LEVELS[state.wall.level] as number) : wallHpCap(state)}（差值自动补满）`,
+        cost: state.wall.level < WALL_UPGRADE_COSTS.length ? upgradeCost(state, WALL_UPGRADE_COSTS[state.wall.level] as number) : null,
+        maxed: state.wall.level >= WALL_UPGRADE_COSTS.length,
+        run: () => upgradeWallHp(this.state as GameState),
+      },
+      {
+        name: '载具耐久',
+        status: `Lv.${state.vehicle.durabilityLevel}/3`,
+        effect: `上限 ${vehicleDurabilityCap(state)} → ${state.vehicle.durabilityLevel < VEHICLE_DURABILITY_COSTS.length ? (VEHICLE_DURABILITY_LEVELS[state.vehicle.durabilityLevel] as number) : vehicleDurabilityCap(state)}`,
+        cost: state.vehicle.durabilityLevel < VEHICLE_DURABILITY_COSTS.length ? upgradeCost(state, VEHICLE_DURABILITY_COSTS[state.vehicle.durabilityLevel] as number) : null,
+        maxed: state.vehicle.durabilityLevel >= VEHICLE_DURABILITY_COSTS.length,
+        run: () => upgradeVehicleDurability(this.state as GameState),
+      },
+      {
+        name: '武器',
+        status: `L${state.weaponLevel + 1}（共 L3）`,
+        effect: `机枪 ${GUN_DAMAGE[state.weaponLevel]} → ${GUN_DAMAGE[Math.min(GUN_DAMAGE.length - 1, state.weaponLevel + 1)]}/发 · 火箭 ${ROCKET_DAMAGE[state.weaponLevel]} → ${ROCKET_DAMAGE[Math.min(ROCKET_DAMAGE.length - 1, state.weaponLevel + 1)]}/发`,
+        cost: state.weaponLevel < WEAPON_UPGRADE_COSTS.length ? upgradeCost(state, WEAPON_UPGRADE_COSTS[state.weaponLevel] as number) : null,
+        maxed: state.weaponLevel >= WEAPON_UPGRADE_COSTS.length,
+        run: () => upgradeWeapon(this.state as GameState),
+      },
+      {
+        name: '储物 +1 格',
+        status: `现 ${state.vehicle.slots} 格`,
+        effect: '货舱扩容，无档位上限',
+        cost: upgradeCost(state, ladderCost(SLOT_LADDER, state.vehicle.slots - STORAGE_SLOTS_BASE)),
+        maxed: false,
+        run: () => buySlot(this.state as GameState),
+      },
+      {
+        name: '载客 +1 座',
+        status: `现 ${state.vehicle.seats} 座（${state.members.length} 人）`,
+        effect: '成员总数上限，无档位上限',
+        cost: upgradeCost(state, ladderCost(SEAT_LADDER, state.vehicle.seats - SEATS_BASE)),
+        maxed: false,
+        run: () => buySeat(this.state as GameState),
+      },
+    ];
+
+    rows.forEach((row, i) => {
+      const y = 320 - i * 132;
+      const card = createPanel(panel, `UpgradeRow${i}`, 0, y, 620, 116);
+      createLabel(card, 'Name', `${row.name}　${row.status}`, 0, 34, 24, COLOR_TEXT, 580);
+      createLabel(card, 'Effect', row.effect, 0, 2, 19, COLOR_DIM, 580);
+      if (row.maxed) {
+        createLabel(card, 'Maxed', '已满级', 0, -32, 20, COLOR_DISABLED, 200);
+      } else {
+        const affordable = (row.cost as number) <= state.stock.material;
+        createButton(
+          card,
+          `Upgrade${i}Btn`,
+          `升级（${row.cost} 材料）`,
+          130,
+          -32,
+          () => this.applyInLayer(row.run, () => this.buildUpgradeLayer()),
+          { width: 240, height: 52, fontSize: 20, disabled: !affordable },
+        );
+        if (!affordable) {
+          createLabel(card, `Upgrade${i}Note`, '材料不足', -140, -32, 18, COLOR_WARNING, 200);
+        }
+      }
+    });
+  }
+
+  /** 维修面板：修车/修墙统一价 1 材料 = 10 耐久（§6）。 */
+  private buildRepairLayer(): void {
+    const state = this.state;
+    if (state === null) return;
+    const panel = this.openLayer('RepairLayer', '维修（1 材料 = 10 耐久）', 660, 640);
+    createLabel(panel, 'Stock', `材料库存 ${state.stock.material}`, 0, 210, 22, COLOR_DIM);
+
+    const targets: Array<{ name: string; target: 'vehicle' | 'wall'; current: number; cap: number }> = [
+      { name: '战车耐久', target: 'vehicle', current: state.vehicle.durability, cap: vehicleDurabilityCap(state) },
+      { name: '围墙', target: 'wall', current: state.wall.hp, cap: wallHpCap(state) },
+    ];
+    targets.forEach((t, i) => {
+      const y = 90 - i * 190;
+      const card = createPanel(panel, `RepairRow${i}`, 0, y, 580, 160);
+      createLabel(card, 'Name', `${t.name}　${t.current} / ${t.cap}`, 0, 52, 26, COLOR_TEXT, 540);
+      const missing = t.cap - t.current;
+      const fullCost = Math.ceil(missing / REPAIR_PER_MATERIAL);
+      const canFix = missing > 0 && state.stock.material >= 1;
+      const canFull = missing > 0 && state.stock.material >= fullCost;
+      createButton(
+        card,
+        `Fix10Btn${i}`,
+        `修 ${REPAIR_PER_MATERIAL} 点（1 材料）`,
+        -135,
+        -34,
+        () => this.applyInLayer(() => repair(this.state as GameState, t.target, 1), () => this.buildRepairLayer()),
+        { width: 240, height: 60, fontSize: 20, disabled: !canFix },
+      );
+      createButton(
+        card,
+        `FixFullBtn${i}`,
+        missing > 0 ? `修满（${fullCost} 材料）` : '已满',
+        135,
+        -34,
+        () => this.applyInLayer(() => repair(this.state as GameState, t.target, 999), () => this.buildRepairLayer()),
+        { width: 240, height: 60, fontSize: 20, disabled: !canFull },
+      );
+    });
+  }
+
+  /** 医疗面板：吃药回血（1 药 = 10 血）+ 药神补剂（§5/§8）。 */
+  private buildMedicLayer(): void {
+    const state = this.state;
+    if (state === null) return;
+    const panel = this.openLayer('MedicLayer', '医疗', 680, 1080);
+    const isPharmacist = state.hero === 'pharmacist';
+    createLabel(
+      panel,
+      'Stock',
+      isPharmacist ? `药品 ${state.stock.medicine} · 1 药 = 10 血；补剂：5 药 → 上限 +50、当前 +50` : `药品 ${state.stock.medicine} · 1 药 = 10 血（只回血不提上限）`,
+      0,
+      420,
+      20,
+      COLOR_DIM,
+      620,
+    );
+
+    const shown = state.members.slice(0, 7);
+    shown.forEach((member, i) => {
+      const y = 330 - i * 104;
+      const card = createPanel(panel, `MedicRow${i}`, 0, y, 620, 92, member.dying ? COLOR_PANEL_DARK : COLOR_PANEL);
+      createLabel(card, 'Name', member.dying ? `${member.name}（濒死·驻留）` : member.name, -180, 26, 22, member.dying ? COLOR_DANGER : COLOR_TEXT, 220);
+      createLabel(card, 'Hp', `${member.hp}/${member.hpCap}`, 218, 26, 20, COLOR_DIM, 120);
+      createBar(card, 'Bar', -110, -18, 210, 22, member.hp / member.hpCap, member.dying ? COLOR_DANGER : COLOR_PRIMARY);
+      createButton(
+        card,
+        'HealBtn',
+        '吃药',
+        75,
+        -18,
+        () => this.applyInLayer(() => healMember(this.state as GameState, member.id), () => this.buildMedicLayer()),
+        { width: 110, height: 52, fontSize: 20, disabled: member.hp >= member.hpCap || state.stock.medicine < 1 },
+      );
+      if (isPharmacist) {
+        createButton(
+          card,
+          'SerumBtn',
+          '补剂',
+          205,
+          -18,
+          () => this.applyInLayer(() => useSerum(this.state as GameState, member.id), () => this.buildMedicLayer()),
+          { width: 110, height: 52, fontSize: 20, color: COLOR_WARNING, disabled: member.hpCap >= 200 || state.stock.medicine < 5 },
+        );
+      }
+    });
+    if (state.members.length > shown.length) {
+      createLabel(panel, 'More', `…另有 ${state.members.length - shown.length} 人未显示`, 0, -440, 18, COLOR_DIM);
+    }
+  }
+
+  /** 任务板：交付任务解锁信任，另付一笔邀请入队（§8 两笔分开）。 */
+  private buildQuestLayer(): void {
+    const state = this.state;
+    if (state === null) return;
+    const panel = this.openLayer('QuestLayer', '任务板', 680, 1080);
+    createLabel(panel, 'Hint', `交付任务取得信任 → 另付一笔邀请入队（座位 ${state.vehicle.seats}，现 ${state.members.length} 人）`, 0, 420, 20, COLOR_DIM, 620);
+
+    const npcIds = Object.keys(state.npcQuests);
+    if (npcIds.length === 0) {
+      createLabel(panel, 'Empty', '还没有结识任何 NPC——探索中首遇 NPC 即接下任务。', 0, 100, 24, COLOR_DIM, 580);
+      return;
+    }
+    npcIds.forEach((npcId, i) => {
+      const y = 320 - i * 150;
+      const quest = state.npcQuests[npcId]!;
+      const name = npcName(npcId);
+      const card = createPanel(panel, `QuestRow${i}`, 0, y, 620, 130);
+      if (isRecruited(state, npcId)) {
+        createLabel(card, 'Name', `${name}　已入队`, 0, 40, 24, COLOR_TEXT, 580);
+        createLabel(card, 'Note', `任务：${quest.amount} ${resourceLabel(quest.resource)}（已交付）`, 0, -8, 20, COLOR_DIM, 580);
+        return;
+      }
+      if (state.npcQuestsDone.includes(npcId)) {
+        createLabel(card, 'Name', `${name}　信任已取得`, 0, 40, 24, COLOR_TEXT, 580);
+        const pharmacistDiscount = state.hero === 'pharmacist' && quest.resource === 'medicine';
+        const recruitCost = pharmacistDiscount ? 15 : RECRUIT_RESOURCE_COST;
+        createLabel(card, 'Note', `邀请入队另付费：${recruitCost} ${resourceLabel(quest.resource)}`, 0, -8, 20, COLOR_DIM, 580);
+        const canPay = state.stock[quest.resource] >= recruitCost && state.members.length < state.vehicle.seats;
+        createButton(
+          card,
+          'RecruitBtn',
+          `邀请（${recruitCost} ${resourceLabel(quest.resource)}）`,
+          state.hero === 'cook' ? -140 : 0,
+          -44,
+          () => this.applyInLayer(() => recruitNpc(this.state as GameState, npcId, 'resource'), () => this.buildQuestLayer()),
+          { width: 260, height: 56, fontSize: 20, disabled: !canPay },
+        );
+        if (state.hero === 'cook') {
+          const canPayFood = state.stock.food >= RECRUIT_FOOD_COST && state.members.length < state.vehicle.seats;
+          createButton(
+            card,
+            'RecruitFoodBtn',
+            `或 ${RECRUIT_FOOD_COST} 食物`,
+            140,
+            -44,
+            () => this.applyInLayer(() => recruitNpc(this.state as GameState, npcId, 'food'), () => this.buildQuestLayer()),
+            { width: 220, height: 56, fontSize: 20, disabled: !canPayFood },
+          );
+        }
+        return;
+      }
+      createLabel(card, 'Name', name, 0, 40, 24, COLOR_TEXT, 580);
+      createLabel(card, 'Note', `需要 ${quest.amount} ${resourceLabel(quest.resource)}（库存 ${state.stock[quest.resource]}）`, 0, -8, 20, COLOR_DIM, 580);
+      const canSubmit = state.stock[quest.resource] >= quest.amount;
+      createButton(
+        card,
+        'SubmitBtn',
+        canSubmit ? `交付（扣 ${quest.amount} ${resourceLabel(quest.resource)}）` : `${quest.amount - state.stock[quest.resource]} 份不足`,
+        0,
+        -44,
+        () => this.applyInLayer(() => submitQuest(this.state as GameState, npcId), () => this.buildQuestLayer()),
+        { width: 360, height: 56, fontSize: 20, disabled: !canSubmit },
+      );
+    });
   }
 
   private buildPendingBattleLayer(title: string, buttonText: string, onQuick: () => void): void {
