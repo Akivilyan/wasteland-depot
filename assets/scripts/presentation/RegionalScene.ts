@@ -20,6 +20,7 @@ import {
   TIER_IDS,
   TIER_LABELS,
   NPCS,
+  emptyStock,
   regionDef,
   resourceLabel,
   layerId,
@@ -30,6 +31,8 @@ import {
 import { HEROES, heroDef, type HeroId } from '../core/hero.ts';
 import {
   createNewGame,
+  prologueTake,
+  finishPrologue,
   startExpedition,
   nextNode,
   takeScavenge,
@@ -71,7 +74,7 @@ import {
   RUN_SAVE_KEY,
   ALL_SAVE_KEYS,
 } from '../core/state.ts';
-import { holdTotals } from '../core/hold.ts';
+import { holdTotals, remainingCapacity, type HoldState } from '../core/hold.ts';
 import {
   SLOT_CAP,
   GUN_DAMAGE,
@@ -95,7 +98,7 @@ import {
 import { waveComposition } from '../core/combat.ts';
 import { BattleStage, type BattleStageOptions, type BattleReport } from './BattleStage.ts';
 import { createStoragePort, type StoragePort } from '../platform/storage.ts';
-import { RegionJourney, REGION_PALETTES, DEFAULT_PALETTE } from './RegionJourney.ts';
+import { RegionJourney, REGION_PALETTES, DEFAULT_PALETTE, PROLOGUE_PALETTE } from './RegionJourney.ts';
 import {
   COLOR_TEXT,
   COLOR_DIM,
@@ -131,6 +134,8 @@ export class RegionalScene extends Component {
   private toast: { label: ReturnType<typeof createLabel> } | null = null;
   /** 待继续的节点结果（节点弹层关闭后回到探索屏）。 */
   private pendingNode: NodeResult | null = null;
+  /** 序章本站已装舱的物品下标（弹层重建保持牌面；跨站清空）。 */
+  private prologueTaken: number[] = [];
 
   override start(): void {
     view.setDesignResolutionSize(DESIGN_WIDTH, DESIGN_HEIGHT, ResolutionPolicy.FIXED_WIDTH);
@@ -141,7 +146,11 @@ export class RegionalScene extends Component {
     } else {
       this.state = saved;
       this.rng = createRng(saved.rngState);
-      this.buildDepot();
+      if (saved.prologueHold !== null && saved.prologueHold !== undefined) {
+        this.buildPrologue();
+      } else {
+        this.buildDepot();
+      }
     }
   }
 
@@ -202,10 +211,147 @@ export class RegionalScene extends Component {
   }
 
   private pickHero(hero: HeroId): void {
-    this.state = createNewGame(hero);
+    // 序章口径（§12）：开局库存 = 路上带回的物资，先空舱出发。
+    this.state = createNewGame(hero, 20261024, emptyStock());
     this.rng = createRng(this.state.rngState);
     this.save();
-    this.buildDepot();
+    this.buildPrologue();
+  }
+
+  // —— 序章（§12：驶向仓库的路上拾取 + 一次装不下的取舍）——
+
+  private buildPrologue(): void {
+    const state = this.state;
+    if (state === null || state.prologueHold === null) return;
+    const screen = this.newScreen('Prologue');
+    this.journey = new RegionJourney(screen, PROLOGUE_PALETTE);
+    const step = state.prologueStep ?? 0;
+    this.journey.setInfo({
+      title: '末班车启动 · 序章',
+      subtitle: step === 0
+        ? '开往你的仓库——路上能捡点什么，就带点什么'
+        : `驶向仓库 · 已过 ${step} 处（货舱 ${state.prologueHold.slots.length}/${state.vehicle.slots} 格）`,
+    });
+
+    createButton(screen, 'HoldBtn', '货舱', -150, -560, () => this.showPrologueHold(), { width: 200, height: 88, fontSize: 24 });
+    const nextLabel = step >= PROLOGUE_STOPS.length ? '抵达仓库' : '赶路';
+    createButton(screen, 'DriveBtn', nextLabel, 150, -560, () => this.prologueDrive(), { width: 280, height: 96, fontSize: 26 });
+  }
+
+  /** 赶路：播一段卷轴 → 开下一站（或抵仓结算）。 */
+  private prologueDrive(): void {
+    const state = this.state;
+    if (state === null || this.journey === null || this.journey.isBusy) return;
+    const step = state.prologueStep ?? 0;
+    const arrive = (): void => this.afterPrologueLeg(step);
+    this.journey.playLeg(arrive, false);
+  }
+
+  private afterPrologueLeg(step: number): void {
+    const state = this.state;
+    if (state === null) return;
+    if (step >= PROLOGUE_STOPS.length) {
+      this.settlePrologue();
+      return;
+    }
+    this.state = { ...state, prologueStep: step + 1 };
+    this.save();
+    this.showPrologueStop(step);
+  }
+
+  /** 站点弹层：逐件装舱（格数即取舍），最后一站物资超量必丢。 */
+  private showPrologueStop(index: number): void {
+    const state = this.state;
+    if (state === null || state.prologueHold === null) return;
+    const stop = PROLOGUE_STOPS[index];
+    if (stop === undefined) {
+      this.settlePrologue();
+      return;
+    }
+    this.prologueScreen()?.destroy();
+    const layer = createBackdrop(this.root as Node, 'PrologueStopLayer', DESIGN_WIDTH, DESIGN_HEIGHT, OVERLAY);
+    const panel = createPanel(layer, 'StopPanel', 0, 20, 660, 900);
+    createLabel(panel, 'Title', stop.title, 0, 380, 32, COLOR_TEXT);
+    createLabel(panel, 'Text', stop.text, 0, 300, 22, COLOR_DIM, 580);
+    createLabel(panel, 'HoldNote', `货舱 ${state.prologueHold.slots.length}/${state.vehicle.slots} 格`, 0, 240, 20, COLOR_DIM, 560);
+
+    const taken = this.prologueTaken;
+    stop.drops.forEach((drop, i) => {
+      const y = 200 - i * 76;
+      const swatch = createPanel(panel, `Drop${i}Swatch`, -250, y, 18, 18, RESOURCE_COLORS[drop.resource], 4);
+      const room = remainingCapacity(state.prologueHold as HoldState, drop.resource, state.vehicle.slots);
+      const isTaken = taken.includes(i);
+      const canLoad = !isTaken && room > 0;
+      createRowLabel(panel, `Drop${i}Label`, `${resourceLabel(drop.resource)} ×${drop.amount}`, -220, y, 24, canLoad ? COLOR_TEXT : COLOR_DISABLED, 260);
+      createButton(
+        panel,
+        `Drop${i}Btn`,
+        isTaken ? '已装舱' : room <= 0 ? '装不下' : '装舱',
+        150,
+        y,
+        () => {
+          const result = prologueTake(this.state as GameState, drop.resource, drop.amount);
+          this.state = result.state;
+          this.prologueTaken = [...taken, i];
+          this.save();
+          this.showPrologueStop(index); // 重建弹层刷新牌面
+          this.showToast(result.message);
+        },
+        { width: 190, height: 64, fontSize: 22, disabled: !canLoad },
+      );
+    });
+
+    const last = index === PROLOGUE_STOPS.length - 1;
+    createButton(panel, 'GoBtn', last ? '装好了，回仓库' : '继续赶路', 0, -400, () => {
+      this.prologueTaken = [];
+      layer.destroy();
+      this.prologueDrive();
+    }, { width: 400, height: 88 });
+  }
+
+  private prologueScreen(): Node | null {
+    return this.root?.getChildByName('PrologueStopLayer') ?? null;
+  }
+
+  /** 抵仓：货舱转仓库（溢出作废）→ 结算面板 → 进仓库主屏。 */
+  private settlePrologue(): void {
+    const state = this.state;
+    if (state === null) return;
+    const result = finishPrologue(state);
+    this.state = result.state;
+    this.save();
+    this.journey?.destroy();
+    this.journey = null;
+    const screen = this.newScreen('PrologueArrival');
+    createLabel(screen, 'Title', '抵达仓库', 0, 420, 44, COLOR_TEXT);
+    createLabel(screen, 'Text', result.message, 0, 280, 26, COLOR_WARNING, 620);
+    createLabel(screen, 'Note', '带回的内容就是开局资源。接下来：修整仓库，出发探索。', 0, 180, 22, COLOR_DIM, 620);
+    createButton(screen, 'EnterBtn', '开始经营', 0, 20, () => this.buildDepot(), { width: 400, height: 96 });
+  }
+
+  /** 序章货舱查看（复用探索货舱布局，只读）。 */
+  private showPrologueHold(): void {
+    const state = this.state;
+    if (state === null || state.prologueHold === null) return;
+    const hold = state.prologueHold;
+    const layer = createBackdrop(this.root as Node, 'PrologueHoldLayer', DESIGN_WIDTH, DESIGN_HEIGHT, OVERLAY);
+    const panel = createPanel(layer, 'HoldPanel', 0, 0, 680, 900);
+    createLabel(panel, 'Title', `货舱（${hold.slots.length}/${state.vehicle.slots} 格）`, 0, 380, 30, COLOR_TEXT);
+    for (let i = 0; i < state.vehicle.slots; i++) {
+      const col = i % 4;
+      const row = Math.floor(i / 4);
+      const x = -225 + col * 150;
+      const y = 280 - row * 110;
+      const slot = hold.slots[i];
+      if (slot === undefined) {
+        createPanel(panel, `Slot${i}`, x, y, 138, 96, COLOR_PANEL_DARK, 8);
+      } else {
+        const cell = createPanel(panel, `Slot${i}`, x, y, 138, 96, RESOURCE_COLORS[slot.resource], 8);
+        createLabel(cell, 'Res', resourceLabel(slot.resource), 0, 16, 18, COLOR_TEXT, 126);
+        createLabel(cell, 'Amt', `${slot.amount}/${SLOT_CAP[slot.resource]}`, 0, -14, 22, COLOR_TEXT, 126);
+      }
+    }
+    createButton(panel, 'CloseBtn', '关闭', 0, -400, () => layer.destroy(), { width: 280, height: 80, color: COLOR_PANEL_DARK });
   }
 
   // —— 仓库 HUD ——
@@ -1007,3 +1153,49 @@ export class RegionalScene extends Component {
 function npcName(npcId: string): string {
   return NPCS.find((n) => n.id === npcId)?.name ?? npcId;
 }
+
+/** 序章站点剧本（§12：前 3 站教学装舱，末站物资超格——取舍即核心体验第一课）。
+ *  容量账：前 3 站约 7 格，末站 8 件、仅剩约 5 格——必丢 3 件。 */
+interface PrologueStop {
+  readonly title: string;
+  readonly text: string;
+  readonly drops: ReadonlyArray<{ resource: ResourceId; amount: number }>;
+}
+
+const PROLOGUE_STOPS: readonly PrologueStop[] = [
+  {
+    title: '路边超市废墟',
+    text: '货架倒了，罐头滚了一地。能带走的都是你的。',
+    drops: [{ resource: 'food', amount: 60 }],
+  },
+  {
+    title: '抛锚的油罐车',
+    text: '油箱还剩小半箱，车身钢板也能拆下来。',
+    drops: [
+      { resource: 'fuel', amount: 30 },
+      { resource: 'material', amount: 40 },
+    ],
+  },
+  {
+    title: '社区诊所残骸',
+    text: '药房抽屉没被翻干净，柜台底下还压着一箱弹盒。',
+    drops: [
+      { resource: 'medicine', amount: 20 },
+      { resource: 'ammo', amount: 80 },
+    ],
+  },
+  {
+    title: '幸存者营地遗址',
+    text: '物资堆还剩不少——但货舱就那么大。装什么、丢什么，从今天起就是你的日常。',
+    drops: [
+      { resource: 'food', amount: 50 },
+      { resource: 'food', amount: 50 },
+      { resource: 'material', amount: 50 },
+      { resource: 'material', amount: 50 },
+      { resource: 'ammo', amount: 100 },
+      { resource: 'ammo', amount: 100 },
+      { resource: 'medicine', amount: 20 },
+      { resource: 'fuel', amount: 20 },
+    ],
+  },
+];

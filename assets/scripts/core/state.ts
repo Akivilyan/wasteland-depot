@@ -87,6 +87,10 @@ export interface GameState {
   finalePending: boolean;
   ending: 'victory' | 'defeat' | null;
   expedition: Expedition | null;
+  /** 序章货舱（序章拾取用；抵仓结算后置 null，非序章恒为 null）。 */
+  prologueHold: HoldState | null;
+  /** 序章站点进度（0..4；表现层流程用，抵仓后无意义）。旧档缺失视为 0。 */
+  prologueStep: number;
   /** 守家战待开（波次日结时人在仓库）。 */
   homeBattlePending: boolean;
   rngState: number;

@@ -36,6 +36,8 @@ import {
   isLayerUnlocked,
   isRecruited,
   upgradeCost,
+  prologueTake,
+  finishPrologue,
 } from '../assets/scripts/core/run.ts';
 import {
   encodeGameState,
@@ -212,6 +214,35 @@ test('upgradeCost: captain gets 25% off rounded up; others pay face value', () =
   assert.equal(upgradeCost(newGame('captain'), 30), 23);
   assert.equal(upgradeCost(newGame('stark'), 30), 30);
   assert.equal(upgradeCost({ ...newGame('captain'), hero: null }, 41), 41);
+});
+
+// —— 序章（§12）——
+
+test('prologue: take fills hold by slot rules; finish converts to opening stock; re-finish rejected', () => {
+  // 序章开局覆盖库存（带回即开局资源）
+  let state = createNewGame('cook', 42, { fuel: 0, food: 0, material: 0, medicine: 0, ammo: 0 });
+  assert.ok(state.prologueHold);
+
+  let r = prologueTake(state, 'food', 60); // 60 食物 → 2 格（50+10）
+  state = r.state;
+  assert.match(r.message, /装舱 60 食物/);
+  r = prologueTake(state, 'ammo', 100); // 1 格
+  state = r.state;
+  r = prologueTake(state, 'material', 120); // 3 格（50+50+20）
+  state = r.state;
+  assert.equal(state.prologueHold.slots.length, 6);
+
+  const done = finishPrologue(state);
+  assert.equal(done.state.stock.food, 60);
+  assert.equal(done.state.stock.ammo, 100);
+  assert.equal(done.state.stock.material, 100); // 120 带回，储量上限 100，20 溢出作废
+  assert.match(done.message, /溢出作废 20/);
+  assert.equal(done.state.prologueHold, null);
+  assert.match(done.message, /抵达仓库/);
+  assert.match(finishPrologue(done.state).message, /序章已结束/);
+  // 旧档（无 prologueHold 字段）等同序章已结束
+  const legacy = { ...done.state, prologueHold: undefined };
+  assert.match(prologueTake(legacy, 'food', 10).message, /序章已结束/);
 });
 
 // —— 战斗结算 ——

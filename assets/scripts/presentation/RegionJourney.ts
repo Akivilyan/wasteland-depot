@@ -29,6 +29,14 @@ export const DEFAULT_PALETTE: JourneyPalette = {
   road: new Color(58, 60, 62, 255),
 };
 
+/** 序章荒原：灰黄晨雾，六区色板之外的独立氛围。 */
+export const PROLOGUE_PALETTE: JourneyPalette = {
+  sky: new Color(96, 88, 66, 255),
+  ground: new Color(58, 52, 40, 255),
+  silhouette: new Color(74, 66, 50, 255),
+  road: new Color(66, 60, 50, 255),
+};
+
 export const REGION_PALETTES: Record<string, JourneyPalette> = {
   food: { sky: new Color(74, 88, 62, 255), ground: new Color(46, 54, 40, 255), silhouette: new Color(58, 70, 50, 255), road: new Color(58, 60, 55, 255) },
   oil: { sky: new Color(88, 78, 58, 255), ground: new Color(52, 46, 38, 255), silhouette: new Color(66, 58, 44, 255), road: new Color(60, 56, 50, 255) },

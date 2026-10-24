@@ -90,7 +90,12 @@ export interface CmdResult {
 
 const STARTER_NAMES = ['老赵'];
 
-export function createNewGame(hero: HeroId, seed = 20261024): GameState {
+export function createNewGame(
+  hero: HeroId,
+  seed = 20261024,
+  /** 开局库存覆盖（序章「带回即开局」传拾取结果；缺省用 STARTING_STOCK）。 */
+  stockOverride?: ResourceStock,
+): GameState {
   const members: NpcMember[] = [];
   for (let i = 0; i < STARTING_NPC_COUNT; i++) {
     members.push(createMember(i, STARTER_NAMES[i] ?? `乘员 ${i + 1}`));
@@ -99,7 +104,7 @@ export function createNewGame(hero: HeroId, seed = 20261024): GameState {
     version: 2,
     day: START_DAY,
     hero,
-    stock: { ...STARTING_STOCK },
+    stock: stockOverride !== undefined ? { ...stockOverride } : { ...STARTING_STOCK },
     stockUpgradeLevel: 0,
     vehicle: {
       durability: VEHICLE_DURABILITY_BASE,
@@ -124,6 +129,8 @@ export function createNewGame(hero: HeroId, seed = 20261024): GameState {
     finalePending: false,
     ending: null,
     expedition: null,
+    prologueHold: { slots: [] },
+    prologueStep: 0,
     homeBattlePending: false,
     rngState: seed >>> 0,
     log: [`第 ${START_DAY} 天：${hero === null ? '序章' : '仓库重启。'}`],
@@ -662,6 +669,44 @@ export function endExpedition(state: GameState): CmdResult {
   const message = `返回仓库：${notes.length > 0 ? notes.join('、') : '空舱而归'}。${waveNote}`;
   next = { ...next, log: [...next.log, message] };
   return { state: next, message };
+}
+
+// —— 序章（§12：路上拾取装舱，抵仓结算即开局资源）——
+
+/** 序章抵仓：货舱全部转入仓库（每资源独立上限、溢出作废，§5 同语义），不推进天数。 */
+export function finishPrologue(state: GameState): CmdResult {
+  if (!state.prologueHold) return { state, message: "序章已结束。" };
+  const stock = { ...state.stock };
+  const notes: string[] = [];
+  for (const entry of holdTotals(state.prologueHold)) {
+    const cap = stockCap(state, entry.resource);
+    const taken = Math.min(cap - stock[entry.resource], entry.amount);
+    const wasted = entry.amount - taken;
+    stock[entry.resource] += Math.max(0, taken);
+    notes.push(`${resourceLabel(entry.resource)} +${Math.max(0, taken)}${wasted > 0 ? `（溢出作废 ${wasted}）` : ''}`);
+  }
+  const summary = notes.length > 0 ? notes.join('、') : '空舱抵仓';
+  const next: GameState = {
+    ...state,
+    stock,
+    prologueHold: null,
+    log: [...state.log, `抵达仓库：${summary}。`],
+  };
+  return { state: next, message: `抵达仓库：${summary}。` };
+}
+
+/** 序章装舱（复用货舱规则：格数与堆叠上限即取舍）。 */
+export function prologueTake(state: GameState, resource: ResourceId, amount: number): CmdResult {
+  if (!state.prologueHold) return { state, message: "序章已结束。" };
+  const result = loadResource(state.prologueHold, resource, amount, state.vehicle.slots);
+  const next: GameState = { ...state, prologueHold: result.hold };
+  const left = amount - result.loaded;
+  return {
+    state: next,
+    message: left > 0
+      ? `装舱 ${result.loaded} ${resourceLabel(resource)}（${left} 装不下，留在路上）。`
+      : `装舱 ${result.loaded} ${resourceLabel(resource)}。`,
+  };
 }
 
 // —— 守家战（§10：管道 围墙 → 车 → 人；车破不判负）——
