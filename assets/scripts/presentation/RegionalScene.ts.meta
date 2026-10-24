@@ -1,0 +1,13 @@
+{
+  "ver": "4.0.24",
+  "importer": "typescript",
+  "imported": true,
+  "uuid": "8b5c14c4-07df-4016-bb7d-470b71a14e25",
+  "files": [],
+  "subMetas": {},
+  "userData": {
+    "moduleId": "project:///assets/scripts/presentation/RegionalScene.js",
+    "importerSettings": 7,
+    "simulateGlobals": []
+  }
+}

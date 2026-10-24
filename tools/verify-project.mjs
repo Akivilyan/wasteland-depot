@@ -25,7 +25,7 @@ async function readDirTs(dir) {
 const scene = JSON.parse(sceneText);
 const scriptMeta = JSON.parse(scriptMetaText);
 assert.equal(scriptMeta.uuid, '6b9c302e-2c38-4bd9-a582-d9450af15460');
-assert.ok(scene.some((entry) => entry.__type__ === '6b9c3AuLDhL2aWC2UUK8VRg'), 'PrototypeScene component is not attached');
+assert.ok(scene.some((entry) => entry.__type__ === '8b5c1TEB99AFrt9RwtxoU4l'), 'RegionalScene component is not attached');
 
 // 三层边界（ARCHITECTURE 第 1 节）对全目录强制，不只查探针文件：
 // 规则层不 import 'cc'、不碰 wx；表现层不直接碰 wx（平台访问只走 platform 适配器）。
