@@ -855,7 +855,7 @@ export class TravelScene extends Component {
       26,
       COLOR_TEXT,
     );
-    this.createLabel(panel, 'EndingNote', '最终目标与多结局待拍板（PENDING_DECISIONS D1/D6）', 0, -120, 18, COLOR_DIM);
+    this.createLabel(panel, 'EndingNote', '区域制长局模型改造中，终局见设计文档', 0, -120, 18, COLOR_DIM);
     this.createButton(panel, 'RestartBtn', '重新开始', 0, -300, () => this.restartGame());
   }
 

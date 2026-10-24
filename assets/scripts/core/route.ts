@@ -4,8 +4,8 @@
 // 仓库 + 5 个地点沿一条单线公路分布（里程 km），玩家选节点出发，
 // 行车段由表现层播放横轴卷轴，抵达后进入节点交互，返程回地图。
 //
-// 首版只做一条路线（GAME_SKELETON 12 节探路验证范围）；路线结构、
-// 地点名单属 PENDING_DECISIONS D2 未确认项，数值全部集中在这里和
+// 首版只做一条路线（GAME_DESIGN探路验证范围）；路线结构、
+// 地点名单属 GAME_DESIGN D2 未确认项，数值全部集中在这里和
 // constants.ts，拍板后改数据即可。
 
 import type { LocationId } from './game.ts';

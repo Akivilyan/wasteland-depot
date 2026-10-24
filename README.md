@@ -41,16 +41,16 @@ docs/             设计与决策文档（见下）
 
 | 文档 | 内容 |
 | --- | --- |
-| [docs/GAME_SKELETON.md](docs/GAME_SKELETON.md) | 游戏愿景、核心循环、内容边界、广告底线、停车场（**游戏是什么**） |
+| [docs/GAME_DESIGN.md](docs/GAME_DESIGN.md) | **玩法设计唯一权威出处**（机制+数值一体，单文档制）：愿景、核心循环、全部系统与数值、停车场 |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 三层边界、文件职责、存档键位、复用清单（**代码怎么组织**，权威出处） |
-| [docs/DECISIONS.md](docs/DECISIONS.md) | 已确认的技术/产品决策记录（ADR，**为什么这么定**） || [docs/VERIFY_CADENCE.md](docs/VERIFY_CADENCE.md) | 验证分层（T0~T3）与触发时机、阶段审核、任务卡规范、架构师/执行工分工（**何时跑哪层验证**，权威出处） |
-| [docs/PENDING_DECISIONS.md](docs/PENDING_DECISIONS.md) | 待财哥/丧彪拍板的产品项与当前默认值 |
-| [docs/INVENTORY_DESIGN.md](docs/INVENTORY_DESIGN.md) | 车辆货舱占格交互设计提案 |
-| [docs/SLICE_00X_*.md](docs/) | 各开发切片的目标、范围、验证结果与人工验收状态 |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | 决策记录存档（ADR-001~023，**为什么这么定**；只读，不再逐轮同步） |
+| [docs/VERIFY_CADENCE.md](docs/VERIFY_CADENCE.md) | 验证分层（T0~T3）与触发时机、阶段审核、任务卡规范、架构师/执行工分工（**何时跑哪层验证**，权威出处） |
+| [docs/INVENTORY_DESIGN.md](docs/INVENTORY_DESIGN.md) | 车辆货舱占格交互设计提案（切片 002 历史基线） |
+| [docs/SLICE_00X_*.md](docs/) | 各开发切片的目标、范围、验证结果与人工验收状态（历史日志） |
 
 Agent 工作守则（命令、环境、回归方式）在 `.agents/skills/wasteland-depot-dev/SKILL.md`。
 
-> 文档治理约定：每个文档一个职责、每条约束一个权威出处，新增约束先归位到下表对应文档（或新建 ADR），其余地方只链接不复制；切片文档是历史日志，活流程（如回归引导）必须独立成活文档。GDD 数值与机制的单一出处规则（ADR-015）：机制叙述只住 GAME_SKELETON、数值只住 PENDING D#（正文以「见 D#」指向）、ADR 只记「为什么」不复制现行数值（旧 ADR 历史数值不改，由后续 ADR 标 superseded）。例外：机制骨架常数（波次间隔、节点构成、倍率、门槛值等）允许在机制叙述中复述一次；成表的可调数值（伤害/耐久/成本/掉率等）仍只住 PENDING D#。
+> 文档治理约定（ADR-023 单文档制）：玩法设计的机制与数值唯一住 `GAME_DESIGN.md`，改动只改该文档 + `constants.ts`/`game.ts`/`loot.ts` 对应数据；`DECISIONS.md` 为只读决策存档（重大方向变化才追加 ADR）；实现事实住 `ARCHITECTURE.md`；其余文档只链接不复制。
 
 ## 切片进度
 
@@ -65,7 +65,7 @@ Agent 工作守则（命令、环境、回归方式）在 `.agents/skills/wastel
 | [SLICE_005](docs/SLICE_005_GAME_LOOP.md) | 行程打通十日循环 GameState：扣油弹/入库/推进一天/危险度/结局重开 | ✅ 65 测试 + 双端 + 模拟器真实点击全链路 | ✅ 已通过（同上） |
 | [SLICE_006](docs/SLICE_006_ROAD_EVENTS.md) | 道路事件接入行车途中：卷轴暂停 → 事件面板 → 选择后果落 GameState → 恢复；首次接入命令行类型检查（ADR-007） | ✅ 71 测试 + 类型检查 + 双端 + 模拟器真实点击两趟事件 | ✅ 已通过（同上） |
 
-旧骨架（十日 × 六地点单线）的核心循环已全部打通。游戏设计已切换为**区域制长局模型**（[GAME_SKELETON.md](docs/GAME_SKELETON.md) 第八版，ADR-010~022）：十日循环 → 长局与波次、六地点单线 → 区域制与解锁（**6 区域 + 市中心，D2 定稿：食品厂/炼油厂/制药厂/军工厂/工业园/购物中心，六区统一外围/内部/核心三层、三按钮选择 UI**）、职业数据 → 主角天赋制、自动战斗 → 竖版定点实时射击（弹药实时消耗+撞线自毁潮水制）、失败线收敛为全员濒死、信号零件改**特定核心 boss 首杀专属**（每区每层 1 boss、只刷一次，地图同样由 boss 首杀掉落）、任务系统标准化（接任务→任务板交付→付费入队，两笔分开）、探索日换算定案（去程 1 天+每节点 1 天+返程 1 天）、终局改 10 天倒计时+无限弹药最终决战、储物/载客去档位改梯度成本、软结局「信号强度」+ 首波起算口径定案。核心层参数化改造与区域制地图为下阶段工作；待拍板项见 [PENDING_DECISIONS.md](docs/PENDING_DECISIONS.md)。
+旧骨架（十日 × 六地点单线）的核心循环已全部打通。游戏设计已切换为**区域制长局模型**（ADR-010~023，现行设计见 [GAME_DESIGN.md](docs/GAME_DESIGN.md)）：长局与波次、区域制与解锁（6 区域 + 市中心，六区统一外围/内部/核心三层）、主角四流派天赋制、竖版定点实时射击（弹药实时消耗+撞线自毁潮水制）、失败线收敛为全员濒死、信号零件特定核心 boss 首杀专属、标准任务系统、终局 10 天倒计时+无限弹药最终决战。**2026-10-24 起（ADR-023）丧彪全权接手设计与实现**，核心层参数化改造与区域制地图为下阶段工作，开发按切片推进、每切片独立可验证。
 
 > 2026-09-03 全项目评审修订（详见 [DECISIONS.md](docs/DECISIONS.md) ADR-008）：结局时机改为玩满第 10 天；幸存者求救事件救助后真实招募；damage 后果真实置车辆损坏；「重新开始」清全部存档键；三层边界静态护栏覆盖全部源文件；driving/returning 中断后回退地图。当前 76 测试。
 

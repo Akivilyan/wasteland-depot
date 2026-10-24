@@ -7,7 +7,7 @@
 import type { Rng } from './rng.ts';
 import { VEHICLE_DEFAULT } from './constants.ts';
 
-// —— 五种资源（GAME_SKELETON 第 5 节）——
+// —— 五种资源（GAME_DESIGN）——
 
 export const RESOURCE_IDS = ['fuel', 'food', 'material', 'medicine', 'ammo'] as const;
 export type ResourceId = (typeof RESOURCE_IDS)[number];
@@ -36,7 +36,7 @@ export const emptyStock = (): ResourceStock => ({
   ammo: 0,
 });
 
-// —— 六个地点（GAME_SKELETON 第 9 节，名单为默认值）——
+// —— 六个地点（GAME_DESIGN，名单为默认值）——
 
 export const LOCATION_IDS = [
   'ammo_factory',
@@ -69,7 +69,7 @@ export const LOCATIONS: readonly LocationDef[] = [
   { id: 'suburb', label: '城郊', lean: ['food', 'material', 'medicine'], risk: 0.6, guaranteed: ['food'], blurb: '杂货与遗物，什么都有一点。' },
 ];
 
-// —— 四种幸存者职业（GAME_SKELETON 第 8 节）——
+// —— 四种幸存者职业（GAME_DESIGN）——
 
 export const PROFESSION_IDS = ['driver', 'mechanic', 'doctor', 'scout'] as const;
 export type ProfessionId = (typeof PROFESSION_IDS)[number];
@@ -93,7 +93,7 @@ export interface Survivor {
   readonly profession: ProfessionId;
 }
 
-// —— 事件（GAME_SKELETON 第 9 节：信息→选择→即时或延迟后果）——
+// —— 事件（GAME_DESIGN：信息→选择→即时或延迟后果）——
 
 export const EVENT_KINDS = ['discovery', 'hazard', 'encounter', 'shelter'] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
@@ -135,7 +135,7 @@ export function createGameConfig(): GameConfig {
   };
 }
 
-// —— 事件表（默认 20~30 个事件的缩减可测集，PENDING_DECISIONS 标注）——
+// —— 事件表（默认 20~30 个事件的缩减可测集，GAME_DESIGN 标注）——
 
 function buildEventTable(): readonly GameEvent[] {
   return [

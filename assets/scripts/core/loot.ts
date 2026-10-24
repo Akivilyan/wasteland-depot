@@ -5,7 +5,7 @@
 // 装舱的占格/堆叠/移动语义全部复用 trunk.ts，本模块只管「抽什么」。
 //
 // 随机必须经由可种子 Rng（rng.ts），保证「同 seed + 同地点 → 同战利品」。
-// 权重数值是 PENDING_DECISIONS 默认值，集中在此，拍板后只改这里。
+// 权重数值是 GAME_DESIGN 默认值，集中在此，拍板后只改这里。
 //
 // 库调研结论（docs/SLICE_004_NODE_LOOT.md）：npm 现成 loot 库均依赖
 // Math.random 或过重/停更，无法接入确定性 Rng，故自实现这一最小子集。

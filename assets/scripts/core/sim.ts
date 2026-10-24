@@ -1,4 +1,4 @@
-// 十日核心循环引擎（GAME_SKELETON 第 3、4 节）。
+// 十日核心循环引擎（GAME_DESIGN）。
 //
 // 纯 TypeScript，不 import `cc`，不碰 `wx`。它把「一天」描述成一组
 // 纯函数命令：看据点 → 选目的地/同行者 → 消耗燃油弹药出发 → 处理
@@ -279,7 +279,7 @@ export function advanceDay(state: GameState): ActionResult {
     ...state.stock,
     food: state.stock.food - foodCost,
   };
-  // 世界危险度每日增长；食物不足时额外上升（默认值，PENDING_DECISIONS 标注）
+  // 世界危险度每日增长；食物不足时额外上升（默认值，GAME_DESIGN 标注）
   let danger = Math.min(MAX_DANGER, state.danger + DANGER_GROWTH_PER_DAY);
   let message = `第 ${state.day + 1} 天：食物消耗 ${foodCost}。`;
   if (state.stock.food < DAILY_FOOD_COST) {

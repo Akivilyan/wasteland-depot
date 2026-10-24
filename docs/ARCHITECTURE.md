@@ -1,9 +1,9 @@
 # 项目架构与技术约束
 
 > 本文是**代码结构、分层边界、存档、复用清单**的唯一权威出处。
-> 游戏愿景与内容范围见 [GAME_SKELETON.md](GAME_SKELETON.md)；
+> 游戏愿景与内容范围见 [GAME_DESIGN.md](GAME_DESIGN.md)；
 > 为什么这么定（选型/兼容的决策过程）见 [DECISIONS.md](DECISIONS.md)；
-> 待拍板的产品项见 [PENDING_DECISIONS.md](PENDING_DECISIONS.md)。
+> 玩法数值与机制以 [GAME_DESIGN.md](GAME_DESIGN.md) 为唯一权威（单文档制，ADR-023）。
 
 ## 1. 三层边界（硬约束）
 
@@ -41,7 +41,7 @@ assets/scripts/platform/      平台适配
 | `loot.ts` | 切片 004：按地点倾向加权抽取候选物资；装舱语义全部复用 trunk | `rollNodeLoot`, `takeLoot`, `putBackLoot`, `buildLootWeights`, `encode/decodeLootState` |
 | `prototype-state.ts` | 切片 001 的三槽后备箱探针，**已被 trunk.ts 取代**；现仅留作最小边界样本（被 verify 脚本与自身测试引用），表现层不再使用 | `createInitialState`, `placeItem` |
 
-> **数据默认值集中在 `constants.ts`；`game.ts` 承载地点/事件/职业等结构化数据，`loot.ts` 承载抽取权重**。拍板待决策项时，优先只改这三处（见 [PENDING_DECISIONS.md](PENDING_DECISIONS.md)）。
+> **数据默认值集中在 `constants.ts`；`game.ts` 承载地点/事件/职业等结构化数据，`loot.ts` 承载抽取权重**。调参时优先只改这三处（数值真源见 [GAME_DESIGN.md](GAME_DESIGN.md)）。
 
 ### 表现层 `assets/scripts/presentation/`
 
@@ -80,7 +80,7 @@ assets/scripts/platform/      平台适配
 | 能力 | 来源 |
 | --- | --- |
 | 本地存档 | `wx.setStorageSync` / `localStorage`（已有 `platform/storage.ts`） |
-| 激励视频广告 | `wx.createRewardedVideoAd`（广告须玩家主动触发，底线见 [GAME_SKELETON.md](GAME_SKELETON.md) 第 13 节） |
+| 激励视频广告 | `wx.createRewardedVideoAd`（广告须玩家主动触发，底线见 [GAME_DESIGN.md](GAME_DESIGN.md) §4；首版不做广告） |
 | 分享 / 登录 / 排行榜关系链 | `wx.shareAppMessage` / 微信登录 / 开放数据域 |
 | UI 列表、滚动、布局、按钮、进度条 | Cocos `Layout` / `ScrollView` / `Button` / `ProgressBar` |
 | 轻量动画（按钮反馈、物品移动、格子高亮） | Cocos `Tween` / `Animation` |

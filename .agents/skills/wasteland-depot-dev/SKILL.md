@@ -23,7 +23,7 @@ The authoritative, current definition of the layering, per-file responsibilities
 - Keep storage, ads, login, sharing, and lifecycle APIs under `assets/scripts/platform`. Access `wx` only through a platform adapter.
 - Keep the first prototype 2D and portrait. Do not add 3D, a physics engine, skeletal animation, networking, or a third-party runtime without a demonstrated need (ADR-001).
 - The engine stays Cocos Creator 3.8.8. Do not propose rebuilding the project or upgrading Cocos: the white-screen/deprecated-API fallout comes from the vendored WeChat adapter template and is not eliminated by either (ADR-001/002) — remediation is the post-build patch script.
-- Ads must remain optional and user-initiated (product baseline in `docs/GAME_SKELETON.md` §13). Do not add banners, splash ads, forced interstitials, or progression tuned to manufacture ad pain.
+- Ads must remain optional and user-initiated (product baseline in `docs/GAME_DESIGN.md` §4; first release ships without ads). Do not add banners, splash ads, forced interstitials, or progression tuned to manufacture ad pain.
 - Gameplay numbers live in `core/constants.ts`; structured data in `core/game.ts`; loot weights in `core/loot.ts`. When a pending decision lands, change those files first.
 
 ## Work through repeatable commands
@@ -67,5 +67,5 @@ Non-negotiables of this project's regression loop (details in the references abo
 ## Verify observable outcomes
 
 - For rule changes, add or update Node tests under `tests` (node native `--test`, imports core `.ts` directly via type stripping; requires Node ≥22.18).
-- Record confirmed decisions as ADRs in `docs/DECISIONS.md`; pending product items in `docs/PENDING_DECISIONS.md`. Distinguish implemented facts from proposed product ideas.
+- Record major direction changes as ADRs in `docs/DECISIONS.md` (read-only archive otherwise). Gameplay design lives solely in `docs/GAME_DESIGN.md` (single-doc regime, ADR-023): design/number changes update that file plus the data files, no separate pending list. Distinguish implemented facts from proposed product ideas.
 - Commit messages use the `zcode:` prefix (the `codex/` prefix is legacy, do not reuse).

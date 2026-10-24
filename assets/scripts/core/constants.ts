@@ -1,7 +1,7 @@
 // 规则层默认值集中地。
 //
 // 本文件是唯一允许出现「玩法数字」的地方。任何改动只动这里，
-// 不散落到 game/sim 里。所有取值都是 PENDING_DECISIONS.md 里
+// 不散落到 game/sim 里。所有取值都是 GAME_DESIGN.md 里
 // 标注「当前为默认值」的临时决定，待财哥/丧彪拍板后改这里即可。
 
 export const GAME_DAYS = 10;
@@ -17,7 +17,7 @@ export const STARTING_RESOURCES = {
 export const DAILY_FOOD_COST = 2;
 export const STARTING_DAY_NUMBER = 1;
 
-/** 仓库初始（4 项设施，见 GAME_SKELETON 第 6 节）。 */
+/** 仓库初始（4 项设施，见 GAME_DESIGN）。 */
 export const FACILITY_LEVELS = {
   storage: 1,
   repair: 1,
@@ -32,9 +32,9 @@ export interface VehicleStats {
   range: number;
 }
 
-/** 车辆四项能力（载重/油耗/防护/探索距离），GAME_SKELETON 第 7 节。
+/** 车辆四项能力（载重/油耗/防护/探索距离），GAME_DESIGN。
  *  注意：单次外出的实际油耗用 route.ts 的里程模型（legFuelCost，地图展示值）；
- *  fuelCost 保留为车辆属性，供司机职业/车辆升级未来消费（PENDING_DECISIONS）。 */
+ *  fuelCost 保留为车辆属性，供司机职业/车辆升级未来消费（GAME_DESIGN）。 */
 export const VEHICLE_DEFAULT: VehicleStats = {
   capacity: 12,
   fuelCost: 2,
@@ -52,7 +52,7 @@ export const ROAD_EVENT_CHANCE = 0.8;
 /** 危险度上限（0..MAX_DANGER）。 */
 export const MAX_DANGER = 10;
 
-/** 世界危险度的增长方式（GAME_SKELETON 13 节未确认，此处为默认值）。 */
+/** 世界危险度的增长方式（GAME_DESIGN未确认，此处为默认值）。 */
 export const DANGER_GROWTH_PER_DAY = 1;
 
 /** 食物耗尽时危险度的额外增长步长。 */
