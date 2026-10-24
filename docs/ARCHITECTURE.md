@@ -29,19 +29,24 @@ assets/scripts/platform/      平台适配
 
 ### 规则层 `assets/scripts/core/`
 
+**区域制模型（现行，SLICE_007 起）**——机制常数唯一住 `config.ts`，结构化数据住 `regions.ts`/`hero.ts`/`events.ts`：
+
 | 文件 | 职责 | 关键导出 |
 | --- | --- | --- |
-| `rng.ts` | 可种子随机源（Mulberry32），规则层所有随机的唯一入口 | `createRng`, `Rng` |
-| `constants.ts` | **玩法常量与默认值的集中处**（结构化数据在 `game.ts`、抽取权重在 `loot.ts`）；初始资源、车辆、危险度、油耗、道路事件概率等默认值 | `GAME_DAYS`, `STARTING_RESOURCES`, `VEHICLE_DEFAULT`, `MAX_DANGER`, `LEG_FUEL_PER_10KM`, `ROAD_EVENT_CHANCE` … |
-| `game.ts` | 玩法数据与装配：五种资源、六个地点、四种职业、事件表与后果结算（gain/lose/damage/reveal/**recruit**） | `RESOURCES`, `LOCATIONS`, `PROFESSIONS`, `createGameConfig`, `pickEvent`, `applyOutcome` |
-| `sim.ts` | 十日核心循环引擎：出发/道路事件/装车/返程/推进一天，全部纯函数；出发油耗用 route 里程模型。事件拆为「抽取」与「结算」两命令；recruit 后果招募幸存者、damage 后果置 `vehicleDamaged` | `createInitialGameState`, `startTrip`, `drawRoadEvent`, `resolveEvent`, `loadCargo`, `returnHome`, `cargoFromTrunk`, `advanceDay`, `SURVIVED_ENDING` |
-| `scenario.ts` | GameState 的存档编解码与**全部存档键位登记**（底层存储复用 platform） | `SAVE_KEY`, `ALL_SAVE_KEYS`, `encodeGameState`, `decodeGameState` |
-| `trunk.ts` | 车辆货舱 4×3 占格/堆叠/移动/交换规则（[INVENTORY_DESIGN.md](INVENTORY_DESIGN.md)） | `createTrunkState`, `canPlace`, `placeItem`, `moveItem`, `removeItem`, `encode/decodeTrunkState` |
-| `route.ts` | 切片 003：单线公路骨架、里程油耗、行程相位机（map/driving/atNode/returning） | `DEPOT_ROUTE`, `legFuelCost`, `locationKm`, `depart`, `arrive`, `departReturn`, `backToMap`, `encode/decodeTripState` |
-| `loot.ts` | 切片 004：按地点倾向加权抽取候选物资；装舱语义全部复用 trunk | `rollNodeLoot`, `takeLoot`, `putBackLoot`, `buildLootWeights`, `encode/decodeLootState` |
-| `prototype-state.ts` | 切片 001 的三槽后备箱探针，**已被 trunk.ts 取代**；现仅留作最小边界样本（被 verify 脚本与自身测试引用），表现层不再使用 | `createInitialState`, `placeItem` |
+| `rng.ts` | 可种子随机源（Mulberry32），规则层所有随机的唯一入口（新旧模型共用） | `createRng`, `Rng` |
+| `config.ts` | 区域制机制常数唯一集中地（GAME_DESIGN 全部数值） | `STOCK_CAP_BASE`, `FUEL_PER_NODE_DAY`, `WAVE_INTERVAL_DAYS`, `hpTierMultiplier` … |
+| `regions.ts` | 六区域×三层、NPC 名册、节点流生成（5:2:2+保底）、搜刮/怪物掉落 | `REGIONS`, `NPCS`, `nextNodeRoll`, `rollScavenge`, `rollMonsterEncounter` |
+| `hero.ts` | 主角四流派数据与掉落加成查询 | `HEROES`, `heroLootMultiplier` |
+| `events.ts` | 区域随机事件池（V2 事件格式） | `EVENTS`, `pickEvent` |
+| `hold.ts` | 货舱槽位模型：每格类型上限+同资源堆叠 | `loadResource`, `remainingCapacity`, `holdTotals` |
+| `combat.ts` | 伤害管道（围墙→车→人）、守家波次构成、武器档案 | `applyDamagePipeline`, `waveComposition`, `weaponProfile` |
+| `boss.ts` | boss 首杀掉落表（层地图+四零件绑定） | `layerBossDrop` |
+| `state.ts` | GameState v2（长局）与存档编解码 | `GameState`, `RUN_SAVE_KEY`, `encodeGameState` |
+| `run.ts` | **命令引擎唯一入口**：出发/节点/返程/日结/升级/修理/医疗/任务/招募/守家/终局 | `createNewGame`, `startExpedition`, `nextNode`, `endExpedition`, `applyExpeditionBattle`, `applyHomeBattle` … |
 
-> **数据默认值集中在 `constants.ts`；`game.ts` 承载地点/事件/职业等结构化数据，`loot.ts` 承载抽取权重**。调参时优先只改这三处（数值真源见 [GAME_DESIGN.md](GAME_DESIGN.md)）。
+**旧十日模型（退役中，表现层切换后删除）**：`sim.ts`/`game.ts`/`route.ts`/`loot.ts`/`constants.ts`（v1）/`scenario.ts`（v1 存档键登记保留）/`prototype-state.ts`。
+
+> **数据默认值集中**：区域制数值在 `config.ts`（+`regions.ts`/`events.ts` 结构化数据）；调参只改这三处 + 本文（数值真源见 [GAME_DESIGN.md](GAME_DESIGN.md)）。
 
 ### 表现层 `assets/scripts/presentation/`
 

@@ -14,6 +14,7 @@ export const SAVE_KEY = 'wasteland-depot.save.v1';
  *  「重新开始」清档、存档迁移、排查工具都以此遍历，避免新增键时漏清。 */
 export const ALL_SAVE_KEYS: readonly string[] = [
   SAVE_KEY,
+  'wasteland-depot.run.v2',
   'wasteland-depot.trunk.v1',
   'wasteland-depot.trip.v1',
   'wasteland-depot.loot.v1',
