@@ -349,18 +349,23 @@ test('finale: countdown reaching zero at depot blocks departure; away trips defe
 
 // —— 仓库命令 ——
 
-test('upgrades consume material; captain pays 75%; ladders escalate', () => {
+test('upgrades consume material; captain discount only on vehicle/wall lines; ladders escalate', () => {
   let state = newGame('captain');
   state = { ...state, stock: { ...state.stock, material: 1000 } };
-  // 队长储量 30 → 23
+  // 队长折扣只覆盖 载具/围墙 系（§8）：储量升级付全价 30
   const upgraded = upgradeStockCap(state);
   assert.equal(upgraded.state.stockUpgradeLevel, 1);
-  assert.equal(upgraded.state.stock.material, 1000 - 23);
+  assert.equal(upgraded.state.stock.material, 1000 - 30);
   assert.equal(stockCap(upgraded.state, 'food'), 150);
 
-  // 普通队长价对照：无折扣英雄付 30
+  // 储物/载客属载具系：队长打折（20 → 15）
+  const slot = buySlot(upgraded.state);
+  assert.equal(slot.state.stock.material, 1000 - 30 - 15);
+
+  // 无折扣英雄对照：储量 30、储物 20
   const plain = upgradeStockCap({ ...newGame('stark'), stock: { ...state.stock, material: 1000 } });
   assert.equal(plain.state.stock.material, 970);
+  assert.equal(buySlot(plain.state).state.stock.material, 950);
 
   // 梯度：储物 20/20/40/40/60/60…；载客 40/60/80/100…
   assert.equal(ladderCost(SLOT_LADDER, 0), 20);
@@ -373,6 +378,9 @@ test('upgrades consume material; captain pays 75%; ladders escalate', () => {
 
   const seat = buySeat({ ...state, vehicle: { ...state.vehicle, seats: 2 }, members: [state.members[0]] });
   assert.equal(seat.state.vehicle.seats, 3);
+  // 满员仍可扩座（修复回归：扩座的目的就是满员后再买，不与招募互锁）
+  const full = buySeat({ ...state, vehicle: { ...state.vehicle, seats: 2 }, members: [state.members[0], { id: 1, name: '乙', hp: 100, hpCap: 100, dying: false }] });
+  assert.equal(full.state.vehicle.seats, 3);
 });
 
 test('repair: 1 material = 10 durability, capped', () => {
@@ -432,4 +440,46 @@ test('save round-trip preserves full expedition state', () => {
   assert.equal(decoded.rngState, state.rngState);
   assert.equal(decodeGameState('not json'), null);
   assert.equal(RUN_SAVE_KEY, 'wasteland-depot.run.v2');
+});
+
+// —— 事件池完整性（内容填充切片）——
+
+test('event pool: 20+ events, unique ids, choices align with outcomes', async () => {
+  const { EVENTS } = await import('../assets/scripts/core/events.ts');
+  assert.ok(EVENTS.length >= 20 && EVENTS.length <= 30, `pool size ${EVENTS.length}`);
+  const ids = new Set(EVENTS.map((e) => e.id));
+  assert.equal(ids.size, EVENTS.length);
+  for (const e of EVENTS) {
+    assert.equal(e.choices.length, e.outcomes.length, `${e.id} choices/outcomes misaligned`);
+    assert.ok(e.text.length > 10, `${e.id} text too short`);
+  }
+});
+
+// —— 收官审阅修复回归 ——
+
+test('victory battle also settles breach damage (output = defense)', () => {
+  let state = newGame('stark');
+  state = depart(state, 'food');
+  const rng = seedRng(state.rngState);
+  const win = applyExpeditionBattle(state, rng, false, { victory: true, breachDamage: 80, ammoSpent: 0 });
+  assert.equal(win.state.vehicle.durability, 120); // 200 - 80
+  assert.ok((win.state.expedition?.hold.slots.length ?? 0) >= 1); // 掉落照发
+  assert.match(win.message, /撞线损失 80/);
+});
+
+test('captain all-resource multiplier includes fuel; others fuel-exempt', () => {
+  let cap = newGame('captain');
+  cap = depart(cap, 'food');
+  const evCap = resolveEvent(cap, 'leaking-tank', 0); // gain fuel 2
+  assert.equal(evCap.state.expedition?.hold.slots[0]?.amount, 4); // ×2
+  let cook = newGame('cook');
+  cook = depart(cook, 'food');
+  const evCook = resolveEvent(cook, 'leaking-tank', 0);
+  assert.equal(evCook.state.expedition?.hold.slots[0]?.amount, 2); // 豁免
+});
+
+test('decodeGameState rejects malformed expedition (corrupt save falls back to empty)', () => {
+  const state = newGame('cook');
+  const raw = JSON.stringify({ ...state, expedition: { region: 123 } });
+  assert.equal(decodeGameState(raw), null);
 });

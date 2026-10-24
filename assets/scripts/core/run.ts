@@ -395,9 +395,10 @@ function buildEncounter(
   };
 }
 
-/** 流派掉落加成（§8）：燃油不参与一切乘数。 */
+/** 流派掉落加成（§8）：血量档倍率不作用于燃油；队长天赋「全资源 ×2」含燃油。 */
 function applyHeroMultiplier(state: GameState, drop: LootDrop, scene: 'scavenge' | 'combat'): LootDrop {
-  if (drop.resource === 'fuel' || state.hero === null) return drop;
+  if (state.hero === null) return drop;
+  if (drop.resource === 'fuel' && state.hero !== 'captain') return drop;
   const mult = heroLootMultiplier(state.hero, drop.resource, scene);
   if (mult === 1) return drop;
   return { resource: drop.resource, amount: Math.max(1, Math.round(drop.amount * mult)) };
@@ -568,6 +569,32 @@ export function applyExpeditionBattle(
       next = { ...next, expedition: { ...expedition, hold: load.hold } };
       message = `战斗胜利：装舱 ${load.loaded} ${resourceLabel(loot.resource)}。`;
     }
+    // 胜利也结算撞线伤害（输出即防御：漏怪撞线自毁按剩余生命扣防线，§7）。
+    if (outcome.breachDamage > 0) {
+      const pipeline = applyDamagePipeline({
+        damage: outcome.breachDamage,
+        wallHp: null,
+        vehicleDurability: next.vehicle.durability,
+        memberHps: next.members.filter((m) => !m.dying).map((m) => m.hp),
+      });
+      const away = next.members.filter((m) => !m.dying);
+      const members = next.members.map((m) => {
+        const index = away.indexOf(m);
+        if (index < 0) return m;
+        const hp = pipeline.memberHpsAfter[index] ?? 0;
+        return { ...m, hp, dying: hp <= 0 };
+      });
+      next = {
+        ...next,
+        vehicle: { ...next.vehicle, durability: pipeline.vehicleDurabilityAfter },
+        members,
+        expedition: { ...(next.expedition as Expedition), forcedReturn: pipeline.vehicleBroken },
+      };
+      next = checkDefeat(next);
+      message += pipeline.vehicleBroken
+        ? ` 撞线损失 ${outcome.breachDamage}：战车打空，强制返仓！`
+        : ` 撞线损失 ${outcome.breachDamage}（车剩 ${pipeline.vehicleDurabilityAfter}）。`;
+    }
   } else {
     // 撞线伤害走管道（探索无墙，车 → 人，§7）。
     const pipeline = applyDamagePipeline({
@@ -592,7 +619,8 @@ export function applyExpeditionBattle(
     next = checkDefeat(next);
     message = pipeline.vehicleBroken ? '战车耐久打空：本场结束，强制返仓（无掉落）。' : `硬扛撞线伤害 ${outcome.breachDamage}，车辆剩 ${pipeline.vehicleDurabilityAfter} 耐久。`;
   }
-  return { state: next, message };
+  // 普通怪战利品资源用了 rng：回写随机态，防同档恢复后随机序列回卷。
+  return { state: { ...next, rngState: rng.state() }, message };
 }
 
 /** boss 首杀掉落（§9/§11）：深一层地图 + 特定核心层零件。已杀 boss 防御性拒绝。 */
@@ -696,8 +724,7 @@ export function finishPrologue(state: GameState): CmdResult {
 }
 
 /** 序章装舱（复用货舱规则：格数与堆叠上限即取舍）。 */
-export function prologueTake(state: GameState, resource: ResourceId, amount: number): CmdResult {
-  if (!state.prologueHold) return { state, message: "序章已结束。" };
+export function prologueTake(state: GameState, resource: ResourceId, amount: number): CmdResult {  if (!state.prologueHold) return { state, message: "序章已结束。" };
   const result = loadResource(state.prologueHold, resource, amount, state.vehicle.slots);
   const next: GameState = { ...state, prologueHold: result.hold };
   const left = amount - result.loaded;
@@ -707,6 +734,11 @@ export function prologueTake(state: GameState, resource: ResourceId, amount: num
       ? `装舱 ${result.loaded} ${resourceLabel(resource)}（${left} 装不下，留在路上）。`
       : `装舱 ${result.loaded} ${resourceLabel(resource)}。`,
   };
+}
+
+/** 序章站点推进（表现层流程态收归命令层管理）。 */
+export function prologueAdvance(state: GameState): GameState {
+  return { ...state, prologueStep: (state.prologueStep ?? 0) + 1 };
 }
 
 // —— 守家战（§10：管道 围墙 → 车 → 人；车破不判负）——
@@ -746,11 +778,31 @@ export function applyHomeBattle(state: GameState, outcome: BattleOutcome): CmdRe
 export function applyFinalBattle(state: GameState, outcome: { victory: boolean; breachDamage: number }): CmdResult {
   if (!state.finalePending) return { state, message: '终局决战尚未触发。' };
   if (outcome.victory) {
-    const next: GameState = {
-      ...state,
+    // 守住即胜利；撞线伤害照扣（守住时人没死光就有救——濒死不算翻盘）。
+    let next: GameState = state;
+    if (outcome.breachDamage > 0) {
+      const pipeline = applyDamagePipeline({
+        damage: outcome.breachDamage,
+        wallHp: state.wall.hp,
+        vehicleDurability: state.vehicle.durability,
+        memberHps: state.members.map((m) => m.hp),
+      });
+      const members = state.members.map((m, i) => {
+        const hp = pipeline.memberHpsAfter[i] ?? 0;
+        return { ...m, hp, dying: hp <= 0 };
+      });
+      next = {
+        ...state,
+        wall: { ...state.wall, hp: pipeline.wallHpAfter },
+        vehicle: { ...state.vehicle, durability: pipeline.vehicleDurabilityAfter },
+        members,
+      };
+    }
+    next = {
+      ...next,
       ending: 'victory',
       finalePending: false,
-      log: [...state.log, `第 ${state.day} 天：最终决战胜利，抵抗军抵达——胜利！`],
+      log: [...next.log, `第 ${state.day} 天：最终决战胜利，抵抗军抵达——胜利！`],
     };
     return { state: next, message: '抵抗军抵达仓库，人类抵抗部队获得胜利！' };
   }
@@ -796,7 +848,7 @@ function trySpend(state: GameState, material: number): { state: GameState; ok: b
 
 export function upgradeStockCap(state: GameState): CmdResult {
   if (state.stockUpgradeLevel >= STOCK_UPGRADE_COSTS.length) return { state, message: '储量已满级。' };
-  const cost = upgradeCost(state, (STOCK_UPGRADE_COSTS[state.stockUpgradeLevel] as number));
+  const cost = STOCK_UPGRADE_COSTS[state.stockUpgradeLevel] as number;
   const spend = trySpend(state, cost);
   if (!spend.ok) return { state, message: `材料不足（需 ${cost}）。` };
   return { state: { ...spend.state, stockUpgradeLevel: state.stockUpgradeLevel + 1 }, message: `储量升级（每种资源上限 +${STOCK_CAP_PER_LEVEL}）。` };
@@ -830,7 +882,7 @@ export function upgradeVehicleDurability(state: GameState): CmdResult {
 
 export function upgradeWeapon(state: GameState): CmdResult {
   if (state.weaponLevel >= WEAPON_UPGRADE_COSTS.length) return { state, message: '武器已满级。' };
-  const cost = upgradeCost(state, (WEAPON_UPGRADE_COSTS[state.weaponLevel] as number));
+  const cost = WEAPON_UPGRADE_COSTS[state.weaponLevel] as number;
   const spend = trySpend(state, cost);
   if (!spend.ok) return { state, message: `材料不足（需 ${cost}）。` };
   return { state: { ...spend.state, weaponLevel: state.weaponLevel + 1 }, message: '武器升级完成。' };
@@ -845,18 +897,15 @@ export function ladderCost(ladder: readonly number[], index: number): number {
 
 export function buySlot(state: GameState): CmdResult {
   const bought = state.vehicle.slots - STORAGE_SLOTS_BASE;
-  const cost = ladderCost(SLOT_LADDER, bought);
+  const cost = upgradeCost(state, ladderCost(SLOT_LADDER, bought));
   const spend = trySpend(state, cost);
   if (!spend.ok) return { state, message: `材料不足（需 ${cost}）。` };
   return { state: { ...spend.state, vehicle: { ...spend.state.vehicle, slots: state.vehicle.slots + 1 } }, message: `储物 +1 格（现 ${state.vehicle.slots + 1} 格）。` };
 }
 
 export function buySeat(state: GameState): CmdResult {
-  if (state.members.length >= state.vehicle.seats) {
-    return { state, message: '没有空座位：先扩载客量或保持现状。' };
-  }
   const bought = state.vehicle.seats - SEATS_BASE;
-  const cost = ladderCost(SEAT_LADDER, bought);
+  const cost = upgradeCost(state, ladderCost(SEAT_LADDER, bought));
   const spend = trySpend(state, cost);
   if (!spend.ok) return { state, message: `材料不足（需 ${cost}）。` };
   return { state: { ...spend.state, vehicle: { ...spend.state.vehicle, seats: state.vehicle.seats + 1 } }, message: `载客 +1 座（现 ${state.vehicle.seats + 1} 座）。` };

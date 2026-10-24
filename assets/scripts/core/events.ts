@@ -1,5 +1,4 @@
-// 区域随机事件池（GAME_DESIGN §9：文案池 20~30 个，本切片先落 12 个起步集，
-// 内容填充切片扩满并调文案）。
+// 区域随机事件池（GAME_DESIGN §9：文案池 20~30 个，v1 共 22 个）。
 //
 // 事件后果类型 V2：资源增减 / 车辆耐久损伤 / 无事。NPC 招募不走事件
 // （保底必遇制，见 regions.ts）；区域地图/零件只从 boss 首杀掉落。
@@ -140,6 +139,96 @@ export const EVENTS: readonly RegionEvent[] = [
     choices: ['点火驱散', '憋气快跑'],
     outcomes: [
       { type: 'vehicleDamage', amount: 10 },
+      { type: 'lose', resource: 'food', amount: 1 },
+    ],
+  },
+  {
+    id: 'greenhouse-wreck',
+    title: '温室残骸',
+    text: '路边一排塌了顶的温室，塑料布底下居然还拱出几丛活着的菜苗。',
+    choices: ['钻进去摘', '不钻这种塌架子'],
+    outcomes: [
+      { type: 'gain', resource: 'food', amount: 2 },
+      { type: 'nothing' },
+    ],
+  },
+  {
+    id: 'crashed-drone',
+    title: '坠落的无人机',
+    text: '一架军用无人机摔在花坛里，机身断成两截，电池仓还烫手。',
+    choices: ['徒手拆件', '等它凉透'],
+    outcomes: [
+      { type: 'gain', resource: 'material', amount: 3 },
+      { type: 'lose', resource: 'medicine', amount: 1 },
+    ],
+  },
+  {
+    id: 'blockade-checkpoint',
+    title: '废弃检查站',
+    text: '拦路的横杆歪着，岗亭里沙袋堆得整整齐齐——像是有人匆忙撤走。',
+    choices: ['翻沙袋找找', '远远绕开'],
+    outcomes: [
+      { type: 'gain', resource: 'ammo', amount: 20 },
+      { type: 'nothing' },
+    ],
+  },
+  {
+    id: 'looted-shop',
+    title: '被撬空的商店',
+    text: '卷帘门被人从里面顶开，货架全空。柜台后面还有一扇小铁门。',
+    choices: ['撬那扇铁门', '前人搜过就没戏'],
+    outcomes: [
+      { type: 'gain', resource: 'material', amount: 2 },
+      { type: 'nothing' },
+    ],
+  },
+  {
+    id: 'scavenger-trail',
+    title: '拾荒队的足迹',
+    text: '一串新鲜脚印通向小巷深处，尽头隐约有手电光。跟上去可能捡漏，也可能撞个正着。',
+    choices: ['远远跟着', '各走各路'],
+    outcomes: [
+      { type: 'gain', resource: 'food', amount: 2 },
+      { type: 'lose', resource: 'medicine', amount: 1 },
+    ],
+  },
+  {
+    id: 'storm-coming',
+    title: '暴雨将至',
+    text: '天边压过来一堵黑墙。硬顶着风赶路车身要挨砸，找个檐下躲雨又得耗掉半天的口粮。',
+    choices: ['顶着风暴赶路', '停下躲雨'],
+    outcomes: [
+      { type: 'vehicleDamage', amount: 12 },
+      { type: 'lose', resource: 'food', amount: 1 },
+    ],
+  },
+  {
+    id: 'skeleton-camp',
+    title: '白骨营地',
+    text: '帐篷还在，人只剩两副骨架。睡袋边的小铁盒没有被人翻过。',
+    choices: ['打开铁盒', '让他们安宁点'],
+    outcomes: [
+      { type: 'gain', resource: 'medicine', amount: 2 },
+      { type: 'nothing' },
+    ],
+  },
+  {
+    id: 'radio-noise',
+    title: '收音机的杂音',
+    text: '车载收音机自己响了起来，杂音里断断续续报着一串坐标。电池快见底了。',
+    choices: ['循着坐标去', '关掉省电'],
+    outcomes: [
+      { type: 'gain', resource: 'ammo', amount: 15 },
+      { type: 'lose', resource: 'fuel', amount: 1 },
+    ],
+  },
+  {
+    id: 'stray-cat',
+    title: '拦路的猫',
+    text: '一只瘦得只剩眼睛亮的猫蹲在路中央，盯着你不放。它身后有条更窄的岔路。',
+    choices: ['跟猫走岔路', '按原路走'],
+    outcomes: [
+      { type: 'gain', resource: 'food', amount: 3 },
       { type: 'lose', resource: 'food', amount: 1 },
     ],
   },

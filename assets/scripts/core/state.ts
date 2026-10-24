@@ -8,7 +8,7 @@ import type { RegionId, TierId, LayerId, ResourceId, ResourceStock } from './reg
 import type { HeroId } from './hero.ts';
 import type { HoldState } from './hold.ts';
 import type { PartId } from './config.ts';
-import { emptyStock } from './regions.ts';
+
 import { NPC_HP_BASE, NPC_HP_CAP_BASE } from './config.ts';
 
 export interface NpcMember {
@@ -136,7 +136,19 @@ function isGameState(value: unknown): value is GameState {
     if (typeof stock[key] !== 'number') return false;
   }
   if (typeof s.vehicle !== 'object' || s.vehicle === null) return false;
+  const vehicle = s.vehicle as Partial<GameState['vehicle']>;
+  for (const key of ['durability', 'durabilityLevel', 'slots', 'seats'] as const) {
+    if (typeof vehicle[key] !== 'number') return false;
+  }
   if (typeof s.wall !== 'object' || s.wall === null) return false;
+  const wall = s.wall as Partial<GameState['wall']>;
+  if (typeof wall.hp !== 'number' || typeof wall.level !== 'number') return false;
+  // 损坏档防御：expedition 形状异常一律拒收，回退空态（ARCHITECTURE §3）。
+  if (s.expedition !== null && s.expedition !== undefined) {
+    const e = s.expedition as Partial<Expedition>;
+    if (typeof e.region !== 'string' || typeof e.tier !== 'string') return false;
+    if (typeof e.hold !== 'object' || e.hold === null || !Array.isArray(e.hold.slots)) return false;
+  }
   return true;
 }
 
@@ -145,4 +157,3 @@ export function createMember(id: number, name: string): NpcMember {
   return { id, name, hp: NPC_HP_BASE, hpCap: NPC_HP_CAP_BASE, dying: false };
 }
 
-export const emptyStockV2 = emptyStock;

@@ -19,9 +19,6 @@ export interface HoldState {
 export const createHold = (): HoldState => ({ slots: [] });
 
 /** 装舱容量：总格数 = 车辆储物格数（由 run.ts 传入）。 */
-export function usedSlots(hold: HoldState): number {
-  return hold.slots.length;
-}
 
 /** 某资源还能装多少单位（受每格上限与剩余空格约束）。 */
 export function remainingCapacity(hold: HoldState, resource: ResourceId, totalSlots: number): number {
@@ -97,25 +94,4 @@ export function holdTotals(hold: HoldState): { resource: ResourceId; amount: num
   return totals;
 }
 
-// —— 序列化（存档透传用）——
 
-export function encodeHold(hold: HoldState): string {
-  return JSON.stringify(hold);
-}
-
-export function decodeHold(raw: string | null): HoldState {
-  if (raw === null) return createHold();
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (typeof parsed !== 'object' || parsed === null) return createHold();
-    const candidate = parsed as Partial<HoldState>;
-    if (!Array.isArray(candidate.slots)) return createHold();
-    for (const slot of candidate.slots) {
-      const s = slot as Partial<HoldSlot>;
-      if (typeof s.resource !== 'string' || typeof s.amount !== 'number') return createHold();
-    }
-    return { slots: candidate.slots };
-  } catch {
-    return createHold();
-  }
-}

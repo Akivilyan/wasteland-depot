@@ -33,6 +33,7 @@ import {
   createNewGame,
   prologueTake,
   finishPrologue,
+  prologueAdvance,
   startExpedition,
   nextNode,
   takeScavenge,
@@ -254,7 +255,7 @@ export class RegionalScene extends Component {
       this.settlePrologue();
       return;
     }
-    this.state = { ...state, prologueStep: step + 1 };
+    this.state = prologueAdvance(state);
     this.save();
     this.showPrologueStop(step);
   }
@@ -367,7 +368,11 @@ export class RegionalScene extends Component {
     }
 
     const waveCountdown = nextWaveDay(state) - state.day;
-    createLabel(screen, 'DayHeader', `第 ${state.day} 天 · 下一波攻家还有 ${waveCountdown} 天`, 0, 610, 30, COLOR_TEXT);
+    // §10 波次明牌：提前一天预告强度。
+    const waveNote = waveCountdown === 1
+      ? `明日波次攻家：约 ${waveComposition(state.wavesPassed + 1).total} 只`
+      : `下一波攻家还有 ${waveCountdown} 天`;
+    createLabel(screen, 'DayHeader', `第 ${state.day} 天 · ${waveNote}`, 0, 610, 30, waveCountdown === 1 ? COLOR_WARNING : COLOR_TEXT);
     // 信号强度条（§11 软结局提示：4 零件各 20%，集齐即满、同步终局触发，牌面即真相）。
     const signalRatio = state.parts.length / 4;
     const inCountdown = state.finaleCountdown !== null;
@@ -487,7 +492,7 @@ export class RegionalScene extends Component {
         name: '储量',
         status: `Lv.${state.stockUpgradeLevel}/3`,
         effect: `每种资源上限 ${STOCK_CAP_BASE + STOCK_CAP_PER_LEVEL * state.stockUpgradeLevel} → ${STOCK_CAP_BASE + STOCK_CAP_PER_LEVEL * (state.stockUpgradeLevel + 1)}`,
-        cost: state.stockUpgradeLevel < STOCK_UPGRADE_COSTS.length ? upgradeCost(state, STOCK_UPGRADE_COSTS[state.stockUpgradeLevel] as number) : null,
+        cost: state.stockUpgradeLevel < STOCK_UPGRADE_COSTS.length ? STOCK_UPGRADE_COSTS[state.stockUpgradeLevel] as number : null,
         maxed: state.stockUpgradeLevel >= STOCK_UPGRADE_COSTS.length,
         run: () => upgradeStockCap(this.state as GameState),
       },
@@ -511,7 +516,7 @@ export class RegionalScene extends Component {
         name: '武器',
         status: `L${state.weaponLevel + 1}（共 L3）`,
         effect: `机枪 ${GUN_DAMAGE[state.weaponLevel]} → ${GUN_DAMAGE[Math.min(GUN_DAMAGE.length - 1, state.weaponLevel + 1)]}/发 · 火箭 ${ROCKET_DAMAGE[state.weaponLevel]} → ${ROCKET_DAMAGE[Math.min(ROCKET_DAMAGE.length - 1, state.weaponLevel + 1)]}/发`,
-        cost: state.weaponLevel < WEAPON_UPGRADE_COSTS.length ? upgradeCost(state, WEAPON_UPGRADE_COSTS[state.weaponLevel] as number) : null,
+        cost: state.weaponLevel < WEAPON_UPGRADE_COSTS.length ? WEAPON_UPGRADE_COSTS[state.weaponLevel] as number : null,
         maxed: state.weaponLevel >= WEAPON_UPGRADE_COSTS.length,
         run: () => upgradeWeapon(this.state as GameState),
       },

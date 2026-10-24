@@ -82,10 +82,6 @@ export type LayerId = `${RegionId}.${TierId}`;
 
 export const layerId = (region: RegionId, tier: TierId): LayerId => `${region}.${tier}`;
 
-export function parseLayerId(id: LayerId): { region: RegionId; tier: TierId } {
-  const [region, tier] = id.split('.');
-  return { region: region as RegionId, tier: tier as TierId };
-}
 
 export function regionDef(id: RegionId): RegionDef {
   const def = REGIONS.find((r) => r.id === id);
@@ -261,18 +257,14 @@ export function rollMonsterEncounter(
   };
 }
 
-/** boss 关：大号 + 压阵潮水（生命值 ×3，撞线按剩余生命 ×1）。 */
-export function bossEncounter(tier: TierId, region: RegionId): MonsterEncounter {
-  const depth = tierIndex(tier);
+/** boss 关：大号 + 压阵潮水（生命值 ×3，撞线按剩余生命 ×1）。
+ *  boss 掉落 = 地图/零件（run.ts bossLootFor），不发资源——preview 置空，牌面即真相。 */
+export function bossEncounter(tier: TierId, _region: RegionId): MonsterEncounter {
   const bossHp: Record<MonsterSize, number> = {
     small: MONSTER_HP.small * 3,
     medium: MONSTER_HP.medium * 3,
     large: MONSTER_HP.large * 3,
   };
-  const def = regionDef(region);
-  const base = (SCRAP_YIELD[depth] as number) * COMBAT_LOOT_MULTIPLIER;
-  const lootResource: ResourceId =
-    def.mainResource ?? 'material';
   return {
     total: 100,
     batches: 4,
@@ -282,6 +274,6 @@ export function bossEncounter(tier: TierId, region: RegionId): MonsterEncounter 
       { size: 'large', count: 10 },
     ],
     hpBySize: bossHp,
-    lootPreview: [{ resource: lootResource, amount: base }],
+    lootPreview: [],
   };
 }
