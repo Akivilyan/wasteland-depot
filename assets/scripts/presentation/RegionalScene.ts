@@ -368,10 +368,16 @@ export class RegionalScene extends Component {
 
     const waveCountdown = nextWaveDay(state) - state.day;
     createLabel(screen, 'DayHeader', `第 ${state.day} 天 · 下一波攻家还有 ${waveCountdown} 天`, 0, 610, 30, COLOR_TEXT);
-    const partNote = state.finaleCountdown === null
-      ? `信号零件 ${state.parts.length}/4`
-      : `⚠ 抵抗军 ${state.finaleCountdown} 天后到达`;
-    createLabel(screen, 'PartHeader', partNote, 0, 560, 24, state.finaleCountdown === null ? COLOR_DIM : COLOR_WARNING);
+    // 信号强度条（§11 软结局提示：4 零件各 20%，集齐即满、同步终局触发，牌面即真相）。
+    const signalRatio = state.parts.length / 4;
+    const inCountdown = state.finaleCountdown !== null;
+    createLabel(screen, 'PartHeader', inCountdown ? `⚠ 抵抗军 ${state.finaleCountdown} 天后到达` : '抵抗军信号强度', 0, 574, 20, inCountdown ? COLOR_WARNING : COLOR_DIM);
+    createBar(screen, 'SignalBar', 0, 540, 420, 22, signalRatio, inCountdown ? COLOR_WARNING : COLOR_PRIMARY);
+    if (!inCountdown) {
+      createLabel(screen, 'SignalNote', `${state.parts.length}/4 零件 · 集齐自动修复基站`, 0, 508, 18, COLOR_DIM);
+    } else if (state.finaleCountdown === 0) {
+      createLabel(screen, 'SignalNote', '信号已发出——最后的机会，守住最终决战！', 0, 508, 18, COLOR_WARNING);
+    }
 
     // 资源五行
     RESOURCE_IDS.forEach((id, i) => {
@@ -437,7 +443,7 @@ export class RegionalScene extends Component {
     if (state.homeBattlePending) {
       this.buildPendingBattleLayer('怪物攻家！', '迎战', () => this.startHomeBattle());
     } else if (state.finalePending) {
-      this.buildPendingBattleLayer('最终决战——守住！', '迎战', () => this.startFinalBattle());
+      this.buildPendingBattleLayer('最终决战——守住！', '迎战', () => this.startFinalBattle(), '最后的机会：无限弹药无限火箭已解锁，守住即胜利');
     }
   }
 
@@ -708,13 +714,13 @@ export class RegionalScene extends Component {
     });
   }
 
-  private buildPendingBattleLayer(title: string, buttonText: string, onQuick: () => void): void {
+  private buildPendingBattleLayer(title: string, buttonText: string, onQuick: () => void, note = '按住屏幕瞄准开火 · 右下角拖放火箭弹'): void {
     const state = this.state;
     if (state === null) return;
     const layer = createBackdrop(this.root as Node, 'BattleLayer', DESIGN_WIDTH, DESIGN_HEIGHT, OVERLAY);
     const panel = createPanel(layer, 'BattlePanel', 0, 0, 600, 360);
     createLabel(panel, 'Title', title, 0, 110, 34, COLOR_WARNING);
-    createLabel(panel, 'Note', '按住屏幕瞄准开火 · 右下角拖放火箭弹', 0, 40, 20, COLOR_DIM, 540);
+    createLabel(panel, 'Note', note, 0, 40, 20, COLOR_DIM, 540);
     createButton(panel, 'QuickBtn', buttonText, 0, -70, onQuick, { width: 420, height: 90 });
   }
 
