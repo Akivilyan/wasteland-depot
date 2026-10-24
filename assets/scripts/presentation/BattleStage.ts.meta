@@ -1,0 +1,13 @@
+{
+  "ver": "4.0.24",
+  "importer": "typescript",
+  "imported": true,
+  "uuid": "a0db2ad5-4d23-4a65-b470-a979cb18a28f",
+  "files": [],
+  "subMetas": {},
+  "userData": {
+    "moduleId": "project:///assets/scripts/presentation/BattleStage.js",
+    "importerSettings": 7,
+    "simulateGlobals": []
+  }
+}

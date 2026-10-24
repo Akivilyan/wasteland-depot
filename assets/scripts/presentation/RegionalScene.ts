@@ -45,6 +45,7 @@ import {
   vehicleDurabilityCap,
   wallHpCap,
   isLayerUnlocked,
+  rocketBattleLimit,
   type NodeResult,
   type NodeEncounter,
 } from '../core/run.ts';
@@ -57,6 +58,8 @@ import {
 } from '../core/state.ts';
 import { holdTotals } from '../core/hold.ts';
 import { SLOT_CAP } from '../core/config.ts';
+import { waveComposition } from '../core/combat.ts';
+import { BattleStage, type BattleStageOptions, type BattleReport } from './BattleStage.ts';
 import { createStoragePort, type StoragePort } from '../platform/storage.ts';
 import { RegionJourney, REGION_PALETTES, DEFAULT_PALETTE } from './RegionJourney.ts';
 import {
@@ -79,9 +82,6 @@ import {
 const { ccclass } = _decorator;
 const DESIGN_WIDTH = 750;
 const DESIGN_HEIGHT = 1334;
-
-/** 占位战斗的固定弹药账（SLICE_010 实时战斗接入后移除）。 */
-const QUICK_BATTLE_AMMO = 60;
 
 /** 半透明遮罩色（弹层通用）。 */
 const OVERLAY = new Color(20, 22, 21, 210);
@@ -225,21 +225,9 @@ export class RegionalScene extends Component {
 
     // 待处理战斗（占位快速结算，SLICE_010/011 换实时战斗）
     if (state.homeBattlePending) {
-      this.buildPendingBattleLayer('怪物攻家！', '快速守家（占位结算）', () => {
-        const result = applyHomeBattle(this.state as GameState, { victory: true, breachDamage: 0, ammoSpent: QUICK_BATTLE_AMMO });
-        this.state = result.state;
-        this.rng = createRng(result.state.rngState);
-        this.save();
-        this.buildDepot();
-        this.showToast(result.message);
-      });
+      this.buildPendingBattleLayer('怪物攻家！', '迎战', () => this.startHomeBattle());
     } else if (state.finalePending) {
-      this.buildPendingBattleLayer('最终决战——守住！', '打最终决战（占位结算）', () => {
-        const result = applyFinalBattle(this.state as GameState, { victory: true, breachDamage: 0 });
-        this.state = result.state;
-        this.save();
-        this.buildDepot();
-      });
+      this.buildPendingBattleLayer('最终决战——守住！', '迎战', () => this.startFinalBattle());
     }
   }
 
@@ -249,7 +237,7 @@ export class RegionalScene extends Component {
     const layer = createBackdrop(this.root as Node, 'BattleLayer', DESIGN_WIDTH, DESIGN_HEIGHT, OVERLAY);
     const panel = createPanel(layer, 'BattlePanel', 0, 0, 600, 360);
     createLabel(panel, 'Title', title, 0, 110, 34, COLOR_WARNING);
-    createLabel(panel, 'Note', '占位结算：胜利、弹药固定消耗（实时战斗 SLICE_010 接入）', 0, 40, 20, COLOR_DIM, 540);
+    createLabel(panel, 'Note', '按住屏幕瞄准开火 · 右下角拖放火箭弹', 0, 40, 20, COLOR_DIM, 540);
     createButton(panel, 'QuickBtn', buttonText, 0, -70, onQuick, { width: 420, height: 90 });
   }
 
@@ -479,9 +467,9 @@ export class RegionalScene extends Component {
       createLabel(panel, 'Loot', `战利品：${loot}`, 0, 100, 24, COLOR_WARNING, 560);
       createLabel(panel, 'Ammo', `当前弹药 ${this.state?.stock.ammo ?? 0}（弹药不限制进入）`, 0, 40, 20, COLOR_DIM, 560);
       if (isBoss) {
-        createButton(panel, 'FightBtn', '开战（占位）', 0, -120, () => this.quickBattle(true), { width: 420, height: 96, color: COLOR_DANGER });
+        createButton(panel, 'FightBtn', '开战', 0, -120, () => this.startExpeditionBattle(true), { width: 420, height: 96, color: COLOR_DANGER });
       } else {
-        createButton(panel, 'FightBtn', '开战（占位）', -140, -120, () => this.quickBattle(false), { width: 240, height: 96, color: COLOR_DANGER });
+        createButton(panel, 'FightBtn', '开战', -140, -120, () => this.startExpeditionBattle(false), { width: 240, height: 96, color: COLOR_DANGER });
         createButton(panel, 'SkipBtn', '绕行', 140, -120, () => {
           this.buildExpedition();
           this.showToast('绕行怪物关卡，放弃掉落。');
@@ -522,20 +510,113 @@ export class RegionalScene extends Component {
     createButton(panel, 'ContinueBtn', '继续', 0, -110, () => this.buildExpedition(), { width: 320, height: 88 });
   }
 
-  /** 占位战斗：必胜、固定弹药账（实时战斗 SLICE_010 接入）。 */
-  private quickBattle(isBoss: boolean): void {
+  // —— 实时战斗（BattleStage，SLICE_010）——
+
+  /** 通用：覆盖全屏建战斗层，装配 BattleStage。 */
+  private runBattle(options: Omit<BattleStageOptions, 'onEnd'>, onEnd: (report: BattleReport) => void): void {
+    const layer = new Node('BattleLayer');
+    layer.setParent(this.node);
+    layer.addComponent(UITransform).setContentSize(DESIGN_WIDTH, DESIGN_HEIGHT);
+    const stage = layer.addComponent(BattleStage);
+    stage.setup({ ...options, onEnd });
+  }
+
+  /** 探索怪物关卡 / boss 战。 */
+  private startExpeditionBattle(isBoss: boolean): void {
     const state = this.state;
-    if (state === null) return;
-    const result = applyExpeditionBattle(state, this.rng, isBoss, {
-      victory: true,
-      breachDamage: 0,
-      ammoSpent: Math.min(state.stock.ammo, QUICK_BATTLE_AMMO),
+    const node = this.pendingNode;
+    if (state === null || state.expedition === null || node === null) return;
+    const encounter = node.encounter;
+    if (encounter === null || (encounter.kind !== 'monster' && encounter.kind !== 'boss')) return;
+    this.runBattle(
+      {
+        mode: 'explore',
+        encounter: encounter.encounter,
+        weaponLevel: state.weaponLevel,
+        starkBonus: state.hero === 'stark',
+        ammo: state.stock.ammo,
+        rocketLimit: rocketBattleLimit(state),
+        title: isBoss ? 'BOSS 战' : '怪物关卡',
+      },
+      (report) => this.settleExpeditionBattle(isBoss, report),
+    );
+  }
+
+  private settleExpeditionBattle(isBoss: boolean, report: BattleReport): void {
+    this.destroyBattleLayer();
+    const result = applyExpeditionBattle(this.state as GameState, this.rng, isBoss, {
+      victory: report.victory,
+      breachDamage: report.breachDamage,
+      ammoSpent: report.ammoSpent,
     });
     this.state = result.state;
     this.rng = createRng(result.state.rngState);
     this.save();
     this.buildExpedition();
     this.showToast(result.message);
+  }
+
+  /** 守家波次战（SLICE_011 口径：围墙→车→人管道）。 */
+  private startHomeBattle(): void {
+    const state = this.state;
+    if (state === null) return;
+    const wave = waveComposition(state.wavesPassed + 1);
+    this.runBattle(
+      {
+        mode: 'home',
+        encounter: { total: wave.total, batches: 4, groups: wave.groups, hpBySize: wave.hpBySize, lootPreview: [] },
+        weaponLevel: state.weaponLevel,
+        starkBonus: state.hero === 'stark',
+        ammo: state.stock.ammo,
+        rocketLimit: rocketBattleLimit(state),
+        title: `第 ${state.wavesPassed + 1} 波攻家`,
+      },
+      (report) => {
+        this.destroyBattleLayer();
+        const result = applyHomeBattle(this.state as GameState, {
+          victory: report.victory,
+          breachDamage: report.breachDamage,
+          ammoSpent: report.ammoSpent,
+        });
+        this.state = result.state;
+        this.save();
+        this.buildDepot();
+        this.showToast(result.message);
+      },
+    );
+  }
+
+  /** 最终决战：无限弹药无限火箭，守住即胜利（§11）。 */
+  private startFinalBattle(): void {
+    const state = this.state;
+    if (state === null) return;
+    const wave = waveComposition(state.wavesPassed + 1);
+    this.runBattle(
+      {
+        mode: 'final',
+        encounter: { total: wave.total, batches: 4, groups: wave.groups, hpBySize: wave.hpBySize, lootPreview: [] },
+        weaponLevel: state.weaponLevel,
+        starkBonus: state.hero === 'stark',
+        ammo: 0,
+        rocketLimit: 99,
+        title: '最终决战',
+      },
+      (report) => {
+        this.destroyBattleLayer();
+        const result = applyFinalBattle(this.state as GameState, {
+          victory: report.victory,
+          breachDamage: report.breachDamage,
+        });
+        this.state = result.state;
+        this.save();
+        this.buildDepot();
+      },
+    );
+  }
+
+  private destroyBattleLayer(): void {
+    const layer = this.node.getChildByName('BattleLayer');
+    layer?.destroy();
   }
 
   // —— 返程 ——
